@@ -1,0 +1,12 @@
+name: docgen
+channels:
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+      - fastapi
+      - python-multipart
+      - pydantic
+      - python-docx
+      - uvicorn
