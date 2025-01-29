@@ -12,23 +12,18 @@ async def generate_document(json_data: str, template_file: Union[BytesIO, str], 
     Generates a DOCX file based on a template and JSON data.
 
     Args:
-        json_data (str): JSON data as a string.
-        template_file (Union[BytesIO, str]): Path to the DOCX template or a file-like object.
+        json_data (dict): JSON data as a dictionary.
+        template_file (BytesIO): In-memory DOCX template file.
         output_file (str): Path to save the generated document.
 
     Returns:
         None
     """
-    # Ensure the template_file is a readable file-like object
-    if not isinstance(template_file, BytesIO):
-        template_file = BytesIO(template_file.read())  # Convert to BytesIO if not already
-
     # Load the template
     template_doc = Document(template_file)
 
-    # Parse JSON data
-    data = json.loads(json_data)
-    sections = data["document"]["sections"]
+    # Extract sections
+    sections = json_data["document"]["sections"]
 
     for section in sections:
         title = section["title"]
