@@ -9,4 +9,5 @@ dependencies:
       - python-multipart
       - pydantic
       - python-docx
+      - python-dotenv
       - uvicorn
