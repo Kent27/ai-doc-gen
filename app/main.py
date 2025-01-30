@@ -23,8 +23,11 @@ GENERATED_DOCS_DIR.mkdir(parents=True, exist_ok=True)
 HOST_URL = os.getenv("HOST_URL", "http://localhost")
 PORT = os.getenv("PORT", "8000")
 
-# Construct the full host URL including port
-FULL_HOST_URL = f"{HOST_URL}:{PORT}" if PORT else HOST_URL
+# Check if running in production (assume no port needed)
+IS_PRODUCTION = HOST_URL.startswith("https://") or os.getenv("PRODUCTION", "false").lower() == "true"
+
+# Construct full host URL (include PORT only if not in production)
+FULL_HOST_URL = f"{HOST_URL}:{PORT}" if not IS_PRODUCTION and PORT else HOST_URL
 
 
 class DocumentRequest(BaseModel):
