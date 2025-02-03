@@ -56,7 +56,13 @@ async def generate_document(json_data: str, template_file: Union[BytesIO, str], 
                     if "content" in bullet and bullet["content"].strip():
                         content_paragraph = paragraph.insert_paragraph_before()
                         content_paragraph.style = "Normal"  # Content below bullets shouldn't have a bullet style
-                        content_run = content_paragraph.add_run(bullet["content"])
+                        
+                        # Format date and content if date exists
+                        date_text = ""
+                        if "date" in bullet:
+                            date_text = _format_date(bullet["date"]) + " "
+                        
+                        content_run = content_paragraph.add_run(f"{date_text}[…] {bullet['content']}")
                         _apply_blue_style(content_run)
 
                         # Align content dynamically with the bullet
@@ -183,3 +189,15 @@ def _apply_normal_style(run):
     """
     run.font.color.rgb = RGBColor(0, 0, 0)  # Black
     run.font.size = Pt(11)  # Match standard font size
+
+
+def _format_date(date_str):
+    """
+    Convert date string from 'Month DD, YYYY' to '[DD Month]' format
+    """
+    from datetime import datetime
+    try:
+        date_obj = datetime.strptime(date_str, '%B %d, %Y')
+        return f"[{date_obj.day} {date_obj.strftime('%B')}]"
+    except:
+        return ""
