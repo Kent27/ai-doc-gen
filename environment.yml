@@ -11,3 +11,4 @@ dependencies:
       - python-docx
       - python-dotenv
       - uvicorn
+      - httpx
