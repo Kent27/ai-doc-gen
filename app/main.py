@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
-from app.services import generate_document
+from app.services.document_service import generate_document
 from pathlib import Path
 import base64
 from io import BytesIO
@@ -112,3 +112,14 @@ async def download_file(filename: str):
         raise HTTPException(status_code=404, detail="File not found")
 
     return FileResponse(file_path, filename=filename)
+
+
+from app.models.api_models import APIConfig, APIResponse
+from app.services.api_service import make_api_request
+
+@app.post("/analyze-api", response_model=APIResponse)
+async def analyze_api(config: APIConfig):
+    """
+    Endpoint to analyze an API by making a request and returning the response with its structure
+    """
+    return await make_api_request(config)
