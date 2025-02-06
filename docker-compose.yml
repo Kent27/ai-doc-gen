@@ -10,3 +10,9 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     command: uvicorn app.main:app --host 0.0.0.0 --port $PORT --reload
+    networks:
+      - solutionesia_network
+
+networks:
+  solutionesia_network:
+    external: true
