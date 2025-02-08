@@ -17,7 +17,18 @@ def convert_text_to_json(text: str) -> Dict:
     You are an AI language model that can read and analyze various news items, then convert them into a specified JSON format.
 
     ### **Context**
-    You receive multiple **topics** of news items (e.g., "asean_statements_and_communiques," "indonesia_and_asean_secretariat_news," or any other category).  
+    You receive multiple topics of news items, each corresponding to a predefined category. The topics include:
+	•	asean_statements_and_communiques
+	•	indonesia_and_asean_secretariat_news
+	•	trafficking_in_persons_migrant_workers
+	•	climate_change
+	•	humanitarian_and_disaster_responses
+	•	asean_dialogue_partners
+	•	labour_migration
+	•	economic_and_political_affairs
+	•	lnob
+	•	others
+
     Each topic has:
     - A title
     - One or more news items (each with its own title, link, **date (Month DD, YYYY)**, and summary)

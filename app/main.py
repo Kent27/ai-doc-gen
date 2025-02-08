@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 from app.services.document_service import generate_document
@@ -7,6 +7,7 @@ import base64
 from io import BytesIO
 import os
 from dotenv import load_dotenv
+import docx
 
 # Load environment variables from .env file
 load_dotenv()
@@ -132,14 +133,36 @@ import openai
 # Initialize OpenAI
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+async def extract_text_from_docx(file: UploadFile) -> str:
+    """Extract text content from a Word document"""
+    # Read the uploaded file into memory
+    content = await file.read()
+    doc_io = BytesIO(content)
+    
+    # Open the document using python-docx
+    doc = docx.Document(doc_io)
+    
+    # Extract text from each paragraph
+    full_text = []
+    for para in doc.paragraphs:
+        full_text.append(para.text)
+    
+    return '\n'.join(full_text)
+
 @app.post("/text-to-doc", response_model=TextToDocResponse)
-async def text_to_doc(request: TextToDocRequest):
+async def text_to_doc(file: UploadFile = File(...)):
     """
-    Convert text to JSON using OpenAI, then generate a document.
+    Convert Word document content to JSON using OpenAI, then generate a document.
     """
     try:
-        # Convert text to JSON using OpenAI (removed await)
-        convertedText = convert_text_to_json(request.text)
+        if not file.filename.endswith('.docx'):
+            raise HTTPException(status_code=400, detail="Only .docx files are supported")
+
+        # Extract text from the Word document
+        document_text = await extract_text_from_docx(file)
+
+        # Convert text to JSON using OpenAI
+        convertedText = convert_text_to_json(document_text)
 
         # Use default template
         template_base64 = load_default_template()
