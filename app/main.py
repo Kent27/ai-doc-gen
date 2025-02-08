@@ -140,20 +140,20 @@ async def text_to_doc(request: TextToDocRequest):
     try:
         # Convert text to JSON using OpenAI (removed await)
         convertedText = convert_text_to_json(request.text)
-        print("got here")
+
         # Use default template
         template_base64 = load_default_template()
-        print("got here2")
+
         # Decode template
         template_bytes = base64.b64decode(template_base64)
         template_file = BytesIO(template_bytes)
-        print("got here3")
+
         # Generate document
         output_filename = "generated_document.docx"
         output_path = GENERATED_DOCS_DIR / output_filename
-        print("got here4")
+
         await generate_document(json_data=convertedText['json_data'], template_file=template_file, output_file=output_path)
-        print("got here5")
+
         # Return download URL
         download_url = f"{FULL_HOST_URL}/download/{output_filename}"
         return TextToDocResponse(download_url=download_url)

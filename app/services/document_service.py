@@ -22,9 +22,18 @@ async def generate_document(json_data: str, template_file: Union[BytesIO, str], 
     # Load the template
     template_doc = Document(template_file)
 
-    # Extract sections
-    sections = json_data["document"]["sections"]
+    # Extract month and sections
+    month = json_data.get("document", {}).get("month", "")
+    sections = json_data.get("document", {}).get("sections", [])
 
+    # First pass: Replace {date} placeholder with month value
+    for paragraph in template_doc.paragraphs:
+        if "{{date}}" in paragraph.text:
+            for run in paragraph.runs:
+                if "{{date}}" in run.text:
+                    run.text = run.text.replace("{{date}}", month)
+
+    # Process sections as before
     for section in sections:
         title = section["title"]
         bullets = section["bullets"]
@@ -77,6 +86,17 @@ async def generate_document(json_data: str, template_file: Union[BytesIO, str], 
                     if run:
                         _apply_blue_style(run)
                 break
+
+    # Final pass: Clear any remaining placeholders
+    for paragraph in template_doc.paragraphs:
+        text = paragraph.text
+        if "{{" in text and "}}" in text:
+            # Find all placeholder patterns and replace them with empty string
+            while "{{" in text and "}}" in text:
+                start = text.find("{{")
+                end = text.find("}}") + 2
+                text = text[:start] + text[end:]
+            paragraph.text = text
 
     # Save the updated document
     template_doc.save(output_file)
