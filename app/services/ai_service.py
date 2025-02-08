@@ -67,7 +67,7 @@ def convert_text_to_json(text: str) -> Dict:
 
     try:
         response = openai.chat.completions.create(
-            model="gpt-4o-2024-08-06",
+            model="gpt-4o-mini-2024-07-18",
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": text}
