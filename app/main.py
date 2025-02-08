@@ -123,3 +123,40 @@ async def analyze_api(config: APIConfig):
     Endpoint to analyze an API by making a request and returning the response with its structure
     """
     return await make_api_request(config)
+
+
+from app.models.text_models import TextToDocRequest, TextToDocResponse
+from app.services.ai_service import convert_text_to_json
+import openai
+
+# Initialize OpenAI
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+@app.post("/text-to-doc", response_model=TextToDocResponse)
+async def text_to_doc(request: TextToDocRequest):
+    """
+    Convert text to JSON using OpenAI, then generate a document.
+    """
+    try:
+        # Convert text to JSON using OpenAI (removed await)
+        convertedText = convert_text_to_json(request.text)
+        print("got here")
+        # Use default template
+        template_base64 = load_default_template()
+        print("got here2")
+        # Decode template
+        template_bytes = base64.b64decode(template_base64)
+        template_file = BytesIO(template_bytes)
+        print("got here3")
+        # Generate document
+        output_filename = "generated_document.docx"
+        output_path = GENERATED_DOCS_DIR / output_filename
+        print("got here4")
+        await generate_document(json_data=convertedText['json_data'], template_file=template_file, output_file=output_path)
+        print("got here5")
+        # Return download URL
+        download_url = f"{FULL_HOST_URL}/download/{output_filename}"
+        return TextToDocResponse(download_url=download_url)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
