@@ -21,4 +21,4 @@ COPY . .
 EXPOSE 8085
 
 # Command to run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8085", "--reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8085", "--reload", "--timeout-keep-alive", "300"]
