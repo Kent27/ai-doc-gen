@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException, File, UploadFile, Body, Request
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
+from typing import Optional
 from app.services.document_service import generate_document
 from pathlib import Path
 import base64
@@ -126,7 +127,7 @@ async def analyze_api(config: APIConfig):
     return await make_api_request(config)
 
 
-from app.models.text_models import TextToDocRequest, TextToDocResponse
+from app.models.text_models import TextToDocResponse
 from app.services.ai_service import convert_text_to_json
 import openai
 
@@ -150,34 +151,37 @@ async def extract_text_from_docx(file: UploadFile) -> str:
     return '\n'.join(full_text)
 
 @app.post("/text-to-doc", response_model=TextToDocResponse)
-async def text_to_doc(file: UploadFile = File(...)):
+async def text_to_doc(
+    request: Request,
+    file: Optional[UploadFile] = File(None)
+):
     """
-    Convert Word document content to JSON using OpenAI, then generate a document.
+    Convert text or Word document content to JSON using OpenAI, then generate a document.
+    Accepts either a file upload through form-data or raw text in request body.
     """
     try:
-        if not file.filename.endswith('.docx'):
-            raise HTTPException(status_code=400, detail="Only .docx files are supported")
+        # Get input text either from file or raw body
+        if file:
+            if not file.filename.endswith('.docx'):
+                raise HTTPException(status_code=400, detail="Only .docx files are supported")
+            document_text = await extract_text_from_docx(file)
+        else:
+            # Read raw text from request body
+            document_text = (await request.body()).decode()
+            if not document_text:
+                raise HTTPException(status_code=400, detail="Either file or text must be provided")
 
-        # Extract text from the Word document
-        document_text = await extract_text_from_docx(file)
-
-        # Convert text to JSON using OpenAI
+        # Rest of the processing remains the same
         convertedText = convert_text_to_json(document_text)
-
-        # Use default template
         template_base64 = load_default_template()
-
-        # Decode template
         template_bytes = base64.b64decode(template_base64)
         template_file = BytesIO(template_bytes)
 
-        # Generate document
         output_filename = "generated_document.docx"
         output_path = GENERATED_DOCS_DIR / output_filename
 
         await generate_document(json_data=convertedText['json_data'], template_file=template_file, output_file=output_path)
 
-        # Return download URL
         download_url = f"{FULL_HOST_URL}/download/{output_filename}"
         return TextToDocResponse(download_url=download_url)
         

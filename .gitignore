@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 app/__pycache__
 app/*.pyc
+app/static/generated_docs
