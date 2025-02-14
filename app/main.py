@@ -9,12 +9,14 @@ from io import BytesIO
 import os
 from dotenv import load_dotenv
 import docx
+from .routers import assistant_router
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Initialize FastAPI
 app = FastAPI()
+app.include_router(assistant_router.router)
 
 # Directory setup
 TEMPLATES_DIR = Path("app/static/templates")

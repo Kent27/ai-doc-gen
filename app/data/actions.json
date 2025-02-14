@@ -1,0 +1,64 @@
+{
+    "actions": {
+        "get_menu": {
+            "name": "get_menu",
+            "description": "Get the restaurant menu items by category",
+            "url": null,
+            "method": "POST",
+            "headers": null,
+            "parameters": [
+                {
+                    "name": "category",
+                    "type": "string",
+                    "description": "Menu category (appetizers, main, desserts, or all)",
+                    "required": false,
+                    "enum": [
+                        "all",
+                        "appetizers",
+                        "main",
+                        "desserts"
+                    ]
+                }
+            ],
+            "auth_type": null,
+            "auth_key": null,
+            "function_path": "app.functions.menu_functions.get_menu"
+        },
+        "get_karyawan": {
+            "name": "get_karyawan",
+            "description": "Get the list of employees",
+            "url": null,
+            "method": "POST",
+            "headers": null,
+            "parameters": [
+                {
+                    "name": "departemen",
+                    "type": "string",
+                    "description": "Department name",
+                    "required": false
+                }
+            ],
+            "auth_type": null,
+            "auth_key": null,
+            "function_path": "app.functions.employee_functions.get_karyawan"
+        },
+        "get_stamp_loyalty": {
+            "name": "get_stamp_loyalty",
+            "description": "Mendapatkan informasi stamp loyalti pelanggan berdasarkan nomor telepon",
+            "url": null,
+            "method": "POST",
+            "headers": null,
+            "parameters": [
+                {
+                    "name": "nomor_telepon",
+                    "type": "string",
+                    "description": "Nomor telepon pelanggan",
+                    "required": true
+                }
+            ],
+            "auth_type": null,
+            "auth_key": null,
+            "function_path": "app.functions.loyalty_functions.get_stamp_loyalty"
+        }
+    }
+}

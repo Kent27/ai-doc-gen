@@ -3,14 +3,29 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file:
+      - .env
     ports:
       - "8085:8085"
     volumes:
       - .:/app
+      - ./config/credentials:/app/config/credentials
     environment:
       - PYTHONUNBUFFERED=1
     networks:
       - solutionesia_network
+
+  # performance-test:
+  #   build: .
+  #   environment:
+  #     - OPENAI_API_KEY=${OPENAI_API_KEY}
+  #     - TEST_ITERATIONS=10
+  #     - TEST_TYPE=thread_creation
+  #   volumes:
+  #     - .:/app
+  #   command: python -m tests.test_concurrent_performance
+  #   depends_on:
+  #     - docgen    # Changed from 'api' to 'docgen'
 
 networks:
   solutionesia_network:
