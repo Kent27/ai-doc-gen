@@ -10,6 +10,7 @@ import os
 from dotenv import load_dotenv
 import docx
 from .routers import assistant_router
+import logging, datetime
 
 # Load environment variables from .env file
 load_dotenv()
@@ -17,6 +18,15 @@ load_dotenv()
 # Initialize FastAPI
 app = FastAPI()
 app.include_router(assistant_router.router)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+
+@app.middleware("http")
+async def log_request(request: Request, call_next):
+    body = await request.body()
+    response = await call_next(request)
+    logging.info(f"{datetime.datetime.now().isoformat()} {request.method} {request.url} Body: {body.decode(errors='replace')} Status: {response.status_code}")
+    return response
 
 # Directory setup
 TEMPLATES_DIR = Path("app/static/templates")
