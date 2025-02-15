@@ -8,6 +8,7 @@ class ManyChatRequest(BaseModel):
     messages: List[ChatMessage]
     subscriber_id: Optional[str] = None
     phone_number: Optional[str] = None
+    customer_name: Optional[str] = None  # Add customer name field
     
 class ManyChatResponse(BaseModel):
     assistant_id: str

@@ -72,7 +72,6 @@ class ManyChatService:
             "subscriber_id": subscriber_id,
             "flow_ns": flow_id,
         }
-        print(self.api_key)
         if custom_fields:
             data["custom_fields"] = custom_fields
             

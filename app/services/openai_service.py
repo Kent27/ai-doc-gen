@@ -306,12 +306,13 @@ class OpenAIAssistantService:
                     print(f"Background task error - subscriber creation: {str(e)}")
                     return
 
-            # Add phone number to the message metadata
+            # Add phone number and customer name to the message metadata
             last_message = request.messages[-1]
             message_metadata = {
                 "content": last_message.content,
                 "metadata": {
-                    "phone_number": request.phone_number or "Not provided"
+                    "phone_number": request.phone_number or "Not provided",
+                    "customer_name": request.customer_name or "Not provided"
                 }
             }
 
