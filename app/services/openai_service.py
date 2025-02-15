@@ -3,7 +3,7 @@ from openai import OpenAI
 import json
 import importlib
 from ..models.assistant_models import (
-    AssistantConfig, AssistantResponse, RunStatus, 
+    AssistantConfig, AssistantResponse, ChatMessage, RunStatus, 
     ThreadMessages, ChatRequest, ChatResponse, MessageContent
 )
 from ..models.manychat_models import ManyChatRequest, ManyChatResponse
@@ -306,11 +306,23 @@ class OpenAIAssistantService:
                     print(f"Background task error - subscriber creation: {str(e)}")
                     return
 
+            # Add phone number to the message metadata
+            last_message = request.messages[-1]
+            message_metadata = {
+                "content": last_message.content,
+                "metadata": {
+                    "phone_number": request.phone_number or "Not provided"
+                }
+            }
+
             # Handle chat with OpenAI Assistant
             chat_response = await self.chat(ChatRequest(
                 assistant_id=request.assistant_id,
                 thread_id=request.thread_id,
-                messages=request.messages
+                messages=[ChatMessage(
+                    role=last_message.role,
+                    content=json.dumps(message_metadata)
+                )]
             ))
 
             # Get the assistant's response
@@ -351,9 +363,7 @@ class OpenAIAssistantService:
             # Return immediate response
             return ManyChatResponse(
                 assistant_id=request.assistant_id,
-                thread_id=request.thread_id,
                 subscriber_id=request.subscriber_id,
-                messages=[],  # Empty messages since processing is async
                 status="processing"
             )
 
