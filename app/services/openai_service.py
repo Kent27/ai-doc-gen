@@ -6,6 +6,8 @@ from ..models.assistant_models import (
     AssistantConfig, AssistantResponse, RunStatus, 
     ThreadMessages, ChatRequest, ChatResponse, MessageContent
 )
+from ..models.manychat_models import ManyChatRequest, ManyChatResponse
+from .manychat_service import ManyChatService
 import asyncio
 from functools import partial
 from typing import Optional, Dict, Any
@@ -285,3 +287,75 @@ class OpenAIAssistantService:
             )
         except Exception as e:
             raise Exception(f"Failed to expire run: {str(e)}")
+
+    async def _process_manychat_background(self, request: ManyChatRequest) -> None:
+        """Background task to process ManyChat request"""
+        try:
+            manychat_service = ManyChatService()
+            subscriber_id = request.subscriber_id
+
+            # Create or get subscriber
+            if not subscriber_id:
+                try:
+                    subscriber_result = await manychat_service.create_subscriber(request.phone_number)
+                    subscriber_id = subscriber_result.get('data', {}).get('id')
+                    if not subscriber_id:
+                        raise ValueError("Failed to get subscriber ID from ManyChat response")
+                except Exception as e:
+                    # Log error but don't raise since this is background task
+                    print(f"Background task error - subscriber creation: {str(e)}")
+                    return
+
+            # Handle chat with OpenAI Assistant
+            chat_response = await self.chat(ChatRequest(
+                assistant_id=request.assistant_id,
+                thread_id=request.thread_id,
+                messages=request.messages
+            ))
+
+            # Get the assistant's response
+            assistant_message = next((msg for msg in chat_response.messages if msg.role == "assistant"), None)
+            if assistant_message and assistant_message.content:
+                # Access the first content item's text value directly
+                ai_response = assistant_message.content[0].text
+                
+                # Set custom field with the response
+                await manychat_service.set_custom_field(
+                    subscriber_id=subscriber_id,
+                    field_id=os.getenv("MANYCHAT_RESPONSE_FIELD_ID"),
+                    value=ai_response
+                )
+
+                # Trigger ManyChat flow with the response
+                await manychat_service.trigger_flow(
+                    subscriber_id=subscriber_id,
+                    flow_id=os.getenv("MANYCHAT_RESPONSE_FLOW_ID"),
+                    custom_fields={
+                        "ai_response": ai_response
+                    }
+                )
+        except Exception as e:
+            # Log error but don't raise since this is background task
+            print(f"Background task error: {str(e)}")
+
+    async def manychat(self, request: ManyChatRequest) -> ManyChatResponse:
+        """Handle ManyChat request asynchronously"""
+        try:
+            # Validate initial request
+            if not request.subscriber_id and not request.phone_number:
+                raise ValueError("Either subscriber_id or phone_number must be provided")
+
+            # Start background processing
+            asyncio.create_task(self._process_manychat_background(request))
+
+            # Return immediate response
+            return ManyChatResponse(
+                assistant_id=request.assistant_id,
+                thread_id=request.thread_id,
+                subscriber_id=request.subscriber_id,
+                messages=[],  # Empty messages since processing is async
+                status="processing"
+            )
+
+        except Exception as e:
+            raise ValueError(f"ManyChat request error: {str(e)}")

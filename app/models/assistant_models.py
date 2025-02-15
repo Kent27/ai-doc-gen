@@ -79,7 +79,6 @@ class ChatRequest(BaseModel):
     assistant_id: str
     messages: List[ChatMessage]
     thread_id: Optional[str] = None
-    type: Optional[str] = "default"
 
 class ChatResponse(BaseModel):
     assistant_id: str

@@ -4,6 +4,7 @@ from ..services.openai_service import OpenAIAssistantService
 from ..services.action_service import ActionService
 from typing import Dict
 from functools import lru_cache
+from ..models.manychat_models import ManyChatRequest, ManyChatResponse
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
@@ -135,3 +136,14 @@ async def update_assistant(assistant_id: str, update_data: AssistantUpdateReques
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/manychat", response_model=ManyChatResponse)
+async def handle_manychat(request: ManyChatRequest):
+    try:
+        service = OpenAIAssistantService()
+        response = await service.manychat(request)
+        return response
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

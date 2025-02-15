@@ -10,9 +10,7 @@ RANGE = 'Sheet1!A2:F'  # Assuming data starts from row 2
 
 def get_credentials():
     """Get credentials from environment or file"""
-    sheet_id = os.getenv('LOYALTY_SHEET_ID')
-    print(f"Debug - Sheet ID: {sheet_id}") 
-    print(f"Debug - OPENAI key: {os.getenv('OPENAI_API_KEY')}")
+
     # google_creds = os.getenv('GOOGLE_CREDENTIALS')
     # if google_creds:
     #     credentials_dict = json.loads(google_creds)
