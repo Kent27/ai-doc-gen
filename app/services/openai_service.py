@@ -11,6 +11,7 @@ from .manychat_service import ManyChatService
 import asyncio
 from functools import partial
 from typing import Optional, Dict, Any
+from ..utils.google_sheets import check_customer_exists, update_customer_name, insert_customer
 
 class OpenAIAssistantService:
     def __init__(self):
@@ -292,63 +293,62 @@ class OpenAIAssistantService:
         """Background task to process ManyChat request"""
         try:
             manychat_service = ManyChatService()
-            subscriber_id = request.subscriber_id
+            phone_number = request.phone_number
+            customer_name = request.customer_name
 
-            # Create or get subscriber
-            if not subscriber_id:
-                try:
-                    subscriber_result = await manychat_service.create_subscriber(request.phone_number)
-                    subscriber_id = subscriber_result.get('data', {}).get('id')
-                    if not subscriber_id:
-                        raise ValueError("Failed to get subscriber ID from ManyChat response")
-                except Exception as e:
-                    # Log error but don't raise since this is background task
-                    print(f"Background task error - subscriber creation: {str(e)}")
-                    return
+            if not phone_number:
+                raise ValueError("Phone number is required")
 
-            # Add phone number and customer name to the message metadata
-            last_message = request.messages[-1]
-            message_metadata = {
-                "content": last_message.content,
-                "metadata": {
-                    "phone_number": request.phone_number or "Not provided",
-                    "customer_name": request.customer_name or "Not provided"
-                }
-            }
+            # Check if customer exists in Google Sheets
+            customer = await check_customer_exists(phone_number)
+            print(f"Customer: {customer}")
+            if customer:
+                # Update name if different
+                if customer_name and customer_name != customer.get('name'):
+                    await update_customer_name(phone_number, customer_name)
+            else:
+                # Insert new customer
+                await insert_customer(phone_number, customer_name)
 
             # Handle chat with OpenAI Assistant
             chat_response = await self.chat(ChatRequest(
                 assistant_id=request.assistant_id,
                 thread_id=request.thread_id,
                 messages=[ChatMessage(
-                    role=last_message.role,
-                    content=json.dumps(message_metadata)
+                    role=request.messages[-1].role,
+                    content=json.dumps({
+                        "content": request.messages[-1].content,
+                        "metadata": {
+                            "phone_number": phone_number,
+                            "customer_name": customer_name
+                        }
+                    })
                 )]
             ))
 
             # Get the assistant's response
             assistant_message = next((msg for msg in chat_response.messages if msg.role == "assistant"), None)
             if assistant_message and assistant_message.content:
-                # Access the first content item's text value directly
                 ai_response = assistant_message.content[0].text
                 
                 # Set custom field with the response
-                await manychat_service.set_custom_field(
-                    subscriber_id=subscriber_id,
-                    field_id=os.getenv("MANYCHAT_RESPONSE_FIELD_ID"),
-                    value=ai_response
-                )
+                if request.subscriber_id:
+                    await manychat_service.set_custom_field(
+                        subscriber_id=request.subscriber_id,
+                        field_id=os.getenv("MANYCHAT_RESPONSE_FIELD_ID"),
+                        value=ai_response
+                    )
 
                 # Trigger ManyChat flow with the response
                 await manychat_service.trigger_flow(
-                    subscriber_id=subscriber_id,
+                    subscriber_id=request.subscriber_id,
                     flow_id=os.getenv("MANYCHAT_RESPONSE_FLOW_ID"),
                     custom_fields={
                         "ai_response": ai_response
                     }
                 )
+
         except Exception as e:
-            # Log error but don't raise since this is background task
             print(f"Background task error: {str(e)}")
 
     async def manychat(self, request: ManyChatRequest) -> ManyChatResponse:

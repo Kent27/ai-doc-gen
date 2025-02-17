@@ -1,67 +1,43 @@
 import os
-import json
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from pathlib import Path
+from ..utils.sheets_base import GoogleSheetsBase
 
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
-SHEET_ID = os.getenv('LOYALTY_SHEET_ID')
-RANGE = 'Sheet1!A2:F'  # Assuming data starts from row 2
+class LoyaltySheet(GoogleSheetsBase):
+    def __init__(self):
+        super().__init__(
+            sheet_id=os.getenv('LOYALTY_SHEET_ID'),
+            range_name='Sheet1!A2:F'
+        )
 
-def get_credentials():
-    """Get credentials from environment or file"""
-
-    # google_creds = os.getenv('GOOGLE_CREDENTIALS')
-    # if google_creds:
-    #     credentials_dict = json.loads(google_creds)
-    #     return service_account.Credentials.from_service_account_info(
-    #         credentials_dict,
-    #         scopes=SCOPES
-    #     )
-    
-    # Fallback to file-based credentials
-    creds_path = Path(__file__).parent.parent.parent / 'config' / 'credentials' / 'loyalty-service-account.json'
-    if not creds_path.exists():
-        raise FileNotFoundError("Service account credentials not found")
-    
-    return service_account.Credentials.from_service_account_file(
-        str(creds_path),
-        scopes=SCOPES
-    )
-
-async def get_stamp_loyalty(nomor_telepon: str) -> dict:
-    """Get loyalty stamp information for a customer by phone number"""
-    try:
-        credentials = get_credentials()
-        service = build('sheets', 'v4', credentials=credentials)
-
-        sheet_id = os.getenv('LOYALTY_SHEET_ID')
-
-        result = service.spreadsheets().values().get(
-            spreadsheetId=sheet_id,
-            range=RANGE
-        ).execute()
-        
-        values = result.get('values', [])
-        
-        for row in values:
-            if len(row) > 1 and row[1] == nomor_telepon:
-                return {
-                    "status": "success",
-                    "data": {
-                        "nama": row[0],
-                        "nomor_telepon": row[1],
-                        "jumlah_stamp": row[3],
+    async def get_stamp_loyalty(self, nomor_telepon: str) -> dict:
+        """Get loyalty stamp information for a customer by phone number"""
+        try:
+            values = await self.get_values()
+            print("values", values)
+            print("nomor_telepon", nomor_telepon)
+            for row in values:
+                if len(row) > 1 and row[1] == nomor_telepon:
+                    return {
+                        "status": "success",
+                        "data": {
+                            "nama": row[0],
+                            "nomor_telepon": row[1],
+                            "jumlah_stamp": row[3],
+                        }
                     }
-                }
-        
-        return {
-            "status": "not_found",
-            "message": "Mohon maaf, nomor telepon tidak terdaftar dalam program stamp loyalti"
-        }
-        
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Terjadi kesalahan: {str(e)}"
-        }
+            
+            return {
+                "status": "not_found",
+                "message": "Mohon maaf, nomor telepon tidak terdaftar dalam program stamp loyalti"
+            }
+            
+        except Exception as e:
+            return {
+                "status": "error",
+                "message": f"Terjadi kesalahan: {str(e)}"
+            }
+
+# Create singleton instance
+loyalty_sheet = LoyaltySheet()
+
+# Expose function at module level for backward compatibility
+get_stamp_loyalty = loyalty_sheet.get_stamp_loyalty
