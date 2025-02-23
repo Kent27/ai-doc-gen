@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List
-from ..models.assistant_models import MessageContent, ChatMessage
+from ..models.assistant_models import ChatMessage
 
 class ManyChatRequest(BaseModel):
     assistant_id: str

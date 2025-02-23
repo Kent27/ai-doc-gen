@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
-from ..models.assistant_models import MessageContent, ChatMessage
+from ..models.assistant_models import ChatMessage
 
 class WhatsAppProfile(BaseModel):
     name: Optional[str] = None

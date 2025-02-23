@@ -1,4 +1,4 @@
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 from typing import List, Optional, Dict, Any, Union, Literal, Callable
 
 class ActionParameter(BaseModel):
@@ -53,28 +53,29 @@ class AssistantResponse(BaseModel):
     status: str
     response_data: Optional[Dict[str, Any]] = None
 
-class MessageContentItem(BaseModel):
-    type: str
-    text: str
-
-class MessageContent(BaseModel):
-    role: str
-    content: List[MessageContentItem]
-
 class RunStatus(BaseModel):
     status: str
     response_data: Optional[Dict[str, Any]] = None
 
-class ThreadMessages(BaseModel):
-    messages: List[MessageContent]
-    has_more: bool
-    first_id: Optional[str] = None
-    last_id: Optional[str] = None
+class TextContent(BaseModel):
+    type: Literal["text"] = "text"
+    text: str
+
+class ImageFileContent(BaseModel):
+    type: Literal["image_file"] = "image_file"
+    image_file: Dict[str, str]
+
+ContentItem = Union[TextContent, ImageFileContent]
 
 class ChatMessage(BaseModel):
     role: str
-    content: str
+    content: List[ContentItem]
 
+class ThreadMessages(BaseModel):
+    messages: List[ChatMessage]
+    has_more: bool
+    first_id: Optional[str] = None
+    last_id: Optional[str] = None
 class ChatRequest(BaseModel):
     assistant_id: str
     messages: List[ChatMessage]
@@ -83,5 +84,5 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     assistant_id: str
     thread_id: str
-    messages: List[MessageContent]
+    messages: List[ChatMessage]
     status: str

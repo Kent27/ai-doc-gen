@@ -1,10 +1,11 @@
+import logging
 import os
 from openai import OpenAI
 import json
 import importlib
 from ..models.assistant_models import (
-    AssistantConfig, AssistantResponse, ChatMessage, RunStatus, 
-    ThreadMessages, ChatRequest, ChatResponse, MessageContent
+    AssistantConfig, AssistantResponse, ChatMessage, ContentItem, ImageFileContent, RunStatus, TextContent, 
+    ThreadMessages, ChatRequest, ChatResponse
 )
 from ..models.manychat_models import ManyChatRequest, ManyChatResponse
 from ..models.whatsapp_models import WhatsAppChatRequest, WhatsAppResponse
@@ -14,6 +15,7 @@ from functools import partial
 from typing import Optional, Dict, Any
 from ..utils.google_sheets import check_customer_exists, update_customer_name, insert_customer
 
+logger = logging.getLogger(__name__)
 class OpenAIAssistantService:
     def __init__(self):
         self._client = None
@@ -135,6 +137,7 @@ class OpenAIAssistantService:
         return RunStatus(status="timeout")
 
     async def get_messages(self, thread_id: str, limit: int = 10, order: str = "desc") -> ThreadMessages:
+        """Get messages with proper content type handling"""
         try:
             messages = await self._run_sync(
                 self.client.beta.threads.messages.list,
@@ -142,15 +145,31 @@ class OpenAIAssistantService:
                 limit=limit,
                 order=order
             )
+            
+            def format_content(content):
+                if content.type == "text":
+                    return {
+                        "type": "text",
+                        "text": content.text.value
+                    }
+                elif content.type == "image_file":
+                    return {
+                        "type": "image_file",
+                        "image_file": {
+                            "file_id": content.image_file.file_id,
+                            "detail": content.image_file.detail
+                        }
+                    }
+                return None
+
             return ThreadMessages(
                 messages=[
-                    MessageContent(
+                    ChatMessage(
                         role=msg.role,
                         content=[
-                            {
-                                "type": content.type,
-                                "text": content.text.value
-                            } for content in msg.content
+                            content for content in 
+                            (format_content(c) for c in msg.content)
+                            if content is not None
                         ]
                     ) for msg in messages.data
                 ],
@@ -159,6 +178,7 @@ class OpenAIAssistantService:
                 last_id=messages.last_id
             )
         except Exception as e:
+            logger.error(f"Error retrieving messages: {str(e)}")
             raise ValueError(f"Error retrieving messages: {str(e)}")
 
     async def _execute_function(self, function_name: str, arguments: Dict[str, Any]) -> Any:
@@ -253,24 +273,41 @@ class OpenAIAssistantService:
                 limit=10
             )
 
+            def process_message_content(msg):
+                formatted_content = []
+                for content in msg.content:
+                    if content.type == "text":
+                        formatted_content.append(TextContent(
+                            type="text",
+                            text=content.text.value
+                        ))
+                    elif content.type == "image_file":
+                        formatted_content.append(ImageFileContent(
+                            type="image_file",
+                            image_file={
+                                "file_id": content.image_file.file_id,
+                                "detail": content.image_file.detail
+                            }
+                        ))
+                    logger.debug(f"Processing content type: {content.type}")
+                    logger.debug(f"Formatted content: {formatted_content[-1].model_dump()}")
+                return formatted_content
+
             return ChatResponse(
                 assistant_id=request.assistant_id,
                 thread_id=thread_id,
                 messages=[
-                    MessageContent(
+                    ChatMessage(
                         role=msg.role,
-                        content=[
-                            {
-                                "type": content.type,
-                                "text": content.text.value
-                            } for content in msg.content
-                        ]
-                    ) for msg in messages.data
+                        content=process_message_content(msg)  # Directly use the processed list
+                    )
+                    for msg in messages.data
                 ],
                 status=run_status.status
             )
 
         except Exception as e:
+            logger.error(f"Chat error: {str(e)}")
             raise ValueError(f"Chat error: {str(e)}")
 
     async def expire_run(self, thread_id: str, run_id: str) -> RunStatus:
@@ -338,7 +375,6 @@ class OpenAIAssistantService:
 
             # Check if customer exists in Google Sheets
             customer = await check_customer_exists(phone_number)
-            print(f"Customer: {customer}")
             if customer:
                 # Update name if different
                 if customer_name and customer_name != customer.get('name'):

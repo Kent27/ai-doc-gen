@@ -59,6 +59,51 @@
             "auth_type": null,
             "auth_key": null,
             "function_path": "app.functions.loyalty_functions.get_stamp_loyalty"
+        },
+        "process_invoices": {
+            "name": "process_invoices",
+            "description": "Memproses invoice dan memperbarui stamp loyalti berdasarkan total pembelian",
+            "url": null,
+            "method": "POST",
+            "headers": null,
+            "parameters": [
+                {
+                    "name": "invoices",
+                    "type": "array",
+                    "description": "Daftar invoice yang berisi id dan total pembelian",
+                    "required": true,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "description": "Nomor invoice"
+                            },
+                            "total": {
+                                "type": "string",
+                                "description": "Total harga pembelian"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "metadata",
+                    "type": "object",
+                    "description": "Data tambahan untuk proses invoice",
+                    "required": true,
+                    "properties": {
+                        "phone_number": {
+                            "type": "string",
+                            "description": "Nomor telepon pelanggan"
+                        },
+                        "customer_name": {
+                            "type": "string",
+                            "description": "Nama pelanggan"
+                        }
+                    }
+                }
+            ],
+            "function_path": "app.functions.loyalty_functions.process_invoices"
         }
     }
 }

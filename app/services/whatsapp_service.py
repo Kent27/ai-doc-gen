@@ -4,11 +4,11 @@ import os
 import httpx
 from PIL import Image  # Change this line
 from io import BytesIO
-from typing import Dict, Any
+from typing import Dict, Any, List
 import logging
 from ..models.whatsapp_models import WhatsAppWebhookRequest
 from ..services.openai_service import OpenAIAssistantService
-from ..models.assistant_models import ChatRequest, ChatMessage
+from ..models.assistant_models import ChatRequest, ChatMessage, ContentItem, ImageFileContent, TextContent
 from ..utils.google_sheets import check_customer_exists, update_customer, insert_customer
 
 logger = logging.getLogger(__name__)
@@ -64,11 +64,12 @@ class WhatsAppService:
             contact = value.contacts[0]
             
             # Process all messages
-            content_items = []
+            content_items: List[Dict] = []
             thread_id = None
             
             for message in messages:
                 if message.type == "text":
+                    # Create text content dictionary
                     content_items.append({
                         "type": "text",
                         "text": message.text.body
@@ -84,10 +85,12 @@ class WhatsAppService:
                         f"whatsapp_image_{message.image.id}.jpg"
                     )
                     
+                    # Create image content dictionary
                     content_items.append({
                         "type": "image_file",
                         "image_file": {
-                            "file_id": file_response["id"]
+                            "file_id": file_response["id"],
+                            "detail": "high"
                         }
                     })
                     
@@ -96,17 +99,26 @@ class WhatsAppService:
                             "type": "text",
                             "text": message.image.caption
                         })
-            print("content_items", content_items)
+
             customer = await check_customer_exists(message.from_)
             thread_id = customer.get('thread_id') if customer else None
 
-            # Get AI response with all message contents
+            # Get AI response with all message contents and metadata
             chat_response = await self.assistant_service.chat(ChatRequest(
                 assistant_id=os.getenv("WHATSAPP_ASSISTANT_ID"),
                 thread_id=thread_id,
                 messages=[ChatMessage(
                     role="user",
-                    content=json.dumps(content_items)
+                    content=[{
+                        "type": "text",
+                        "text": json.dumps({
+                            "content": content_items,
+                            "metadata": {
+                                "phone_number": message.from_,
+                                "customer_name": contact.profile.name
+                            }
+                        })
+                    }]
                 )]
             ))
             
