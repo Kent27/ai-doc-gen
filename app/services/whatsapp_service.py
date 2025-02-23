@@ -6,7 +6,7 @@ from PIL import Image  # Change this line
 from io import BytesIO
 from typing import Dict, Any, List
 import logging
-from ..models.whatsapp_models import WhatsAppWebhookRequest
+from ..models.whatsapp_models import WhatsAppWebhookRequest, WhatsAppMessage, WhatsAppContact
 from ..services.openai_service import OpenAIAssistantService
 from ..models.assistant_models import ChatRequest, ChatMessage, ContentItem, ImageFileContent, TextContent
 from ..utils.google_sheets import check_customer_exists, update_customer, insert_customer
@@ -61,8 +61,8 @@ class WhatsAppService:
             change = entry.changes[0]
             value = change.value
 
-            # Check if this is a status update
-            if hasattr(value, 'statuses'):
+            # Check if this is a status update and the value is not None
+            if hasattr(value, 'statuses') and value.statuses is not None:
                 # Just acknowledge status updates without processing
                 return {"status": "success", "message": "Status update received"}
 
@@ -70,8 +70,8 @@ class WhatsAppService:
             if not hasattr(value, 'messages') or not value.messages:
                 return {"status": "success", "message": "No messages to process"}
 
-            messages = value.messages
-            contact = value.contacts[0]
+            messages = [WhatsAppMessage.model_validate(msg) for msg in value.messages]
+            contact = WhatsAppContact.model_validate(value.contacts[0])
             
             # Process all messages
             content_items: List[Dict] = []
@@ -79,7 +79,6 @@ class WhatsAppService:
             
             for message in messages:
                 if message.type == "text":
-                    # Create text content dictionary
                     content_items.append({
                         "type": "text",
                         "text": message.text.body
@@ -110,7 +109,7 @@ class WhatsAppService:
                             "text": message.image.caption
                         })
 
-            customer = await check_customer_exists(message.from_)
+            customer = await check_customer_exists(messages[0].from_)
             thread_id = customer.get('thread_id') if customer else None
 
             # Get AI response with all message contents and metadata
@@ -124,7 +123,7 @@ class WhatsAppService:
                         "text": json.dumps({
                             "content": content_items,
                             "metadata": {
-                                "phone_number": message.from_,
+                                "phone_number": messages[0].from_,
                                 "customer_name": contact.profile.name
                             }
                         })
@@ -134,7 +133,7 @@ class WhatsAppService:
             
             # Update customer data
             customer_data = {
-                'phone': message.from_,
+                'phone': messages[0].from_,
                 'name': contact.profile.name,
                 'thread_id': chat_response.thread_id
             }
@@ -153,7 +152,7 @@ class WhatsAppService:
                 if assistant_message and assistant_message.content:
                     response_text = assistant_message.content[0].text
                     await self.send_message(
-                        to=message.from_,
+                        to=messages[0].from_,
                         message=response_text
                     )
             

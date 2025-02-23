@@ -40,6 +40,18 @@ class WhatsAppValue(BaseModel):
     messages: Optional[List[dict]] = None
     statuses: Optional[List[WhatsAppStatus]] = None
 
+    def model_post_init(self, __context) -> None:
+        if self.contacts:
+            self.contacts = [
+                WhatsAppContact.model_validate(contact) 
+                for contact in self.contacts
+            ]
+        if self.messages:
+            self.messages = [
+                WhatsAppMessage.model_validate(message) 
+                for message in self.messages
+            ]
+
 class WhatsAppChange(BaseModel):
     value: WhatsAppValue
     field: str
