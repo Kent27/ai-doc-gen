@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 import docx
 from .routers import assistant_router
 import logging, datetime
+from .routers import whatsapp
 
 # Load environment variables from .env file
 load_dotenv()
@@ -18,6 +19,7 @@ load_dotenv()
 # Initialize FastAPI
 app = FastAPI()
 app.include_router(assistant_router.router)
+app.include_router(whatsapp.router)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 

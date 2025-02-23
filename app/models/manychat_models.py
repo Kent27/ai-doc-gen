@@ -13,4 +13,5 @@ class ManyChatRequest(BaseModel):
 class ManyChatResponse(BaseModel):
     assistant_id: str
     subscriber_id: Optional[str] = None
+    thread_id: Optional[str] = None  # Add thread_id to response
     status: str  # Can be "success", "error", "processing"
