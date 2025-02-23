@@ -9,10 +9,20 @@ whatsapp_service = WhatsAppService()
 assistant_service = OpenAIAssistantService()
 
 @router.get("/webhook")
-async def verify_webhook(mode: str, verify_token: str, challenge: str):
+async def verify_webhook(request: Request):
     """Handle webhook verification from WhatsApp"""
-    if whatsapp_service.verify_webhook(mode, verify_token, challenge):
-        return int(challenge)
+    params = request.query_params
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+    
+    verify_token = os.getenv("WHATSAPP_VERIFY_TOKEN")
+    print(f"Debug - Webhook verification: mode={mode}, token={token}, challenge={challenge}")
+    
+    if mode and token and challenge:
+        if mode == "subscribe" and token == verify_token:
+            return int(challenge)
+    
     raise HTTPException(status_code=403, detail="Verification failed")
 
 @router.post("/webhook")
