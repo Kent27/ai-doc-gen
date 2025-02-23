@@ -2,12 +2,15 @@ import os
 from datetime import datetime
 from typing import Optional, Dict, Any
 from .sheets_base import GoogleSheetsBase
+import logging
+
+logger = logging.getLogger(__name__)
 
 class CustomerSheet(GoogleSheetsBase):
     def __init__(self):
         super().__init__(
             sheet_id=os.getenv('LOYALTY_SHEET_ID'),
-            range_name="Sheet1!A2:E"  # A-E for the 5 columns
+            range_name="Sheet1!A2:F"  # A-F for the 6 columns
         )
 
     async def check_customer_exists(self, phone_number: str) -> Optional[Dict[str, Any]]:
@@ -25,6 +28,7 @@ class CustomerSheet(GoogleSheetsBase):
                     'email': row[2] if len(row) > 2 else None,  # Email (Column C)
                     'stamps': row[3] if len(row) > 3 else '0',  # Loyalty Stamps (Column D)
                     'chat_status': row[4] if len(row) > 4 else None,  # Chat Status (Column E)
+                    'thread_id': row[5] if len(row) > 5 else None,  # Thread ID (Column F)
                     'row_number': row_num + 2  # Add 2 because data starts from row 2
                 }
                 
@@ -42,18 +46,47 @@ class CustomerSheet(GoogleSheetsBase):
         await self.update_values(range_name, values)
         return True
 
-    async def insert_customer(self, phone_number: str, name: Optional[str] = None) -> bool:
-        """Insert new customer with just name and phone number"""
-        new_row = [
-            name or '',        # Name
-            phone_number,      # Phone Number
-            '',               # Email (empty)
-            '0',              # Loyalty Stamps (start with 0)
-            ''                # Chat Status (empty)
-        ]
         
-        await self.append_values([new_row])
-        return True
+    #     await self.append_values([new_row])
+    #     return True
+    
+    async def update_customer(self, customer, data: dict) -> bool:
+        """Update customer data in Google Sheets"""
+        try:
+                
+            # Update name and thread_id
+            range_name = f'Sheet1!A{customer["row_number"]}:F{customer["row_number"]}'
+            values = [[
+                data['name'],               # Column A: Name
+                data['phone'],              # Column B: Phone
+                customer.get('email', ''),  # Column C: Email (preserve existing)
+                customer.get('stamps', '0'), # Column D: Stamps (preserve existing)
+                customer.get('chat_status', ''), # Column E: Chat Status
+                data['thread_id']           # Column F: Thread ID
+            ]]
+            
+            await self.update_values(range_name, values)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating customer: {str(e)}")
+            raise
+
+    async def insert_customer(self, data: dict) -> None:
+        """Insert new customer with all fields"""
+        try:
+            new_row = [
+                data['name'],
+                data['phone'],
+                '',               # Email (empty)
+                '0',              # Loyalty Stamps (start with 0)
+                '',               # Chat Status (empty)
+                data['thread_id']
+            ]
+            await self.append_values([new_row])
+        except Exception as e:
+            logger.error(f"Error inserting customer: {str(e)}")
+            raise
 
 # Create singleton instance
 customer_sheet = CustomerSheet()
@@ -62,3 +95,4 @@ customer_sheet = CustomerSheet()
 check_customer_exists = customer_sheet.check_customer_exists
 update_customer_name = customer_sheet.update_customer_name
 insert_customer = customer_sheet.insert_customer
+update_customer = customer_sheet.update_customer

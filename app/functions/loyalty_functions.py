@@ -12,8 +12,6 @@ class LoyaltySheet(GoogleSheetsBase):
         """Get loyalty stamp information for a customer by phone number"""
         try:
             values = await self.get_values()
-            print("values", values)
-            print("nomor_telepon", nomor_telepon)
             for row in values:
                 if len(row) > 1 and row[1] == nomor_telepon:
                     return {

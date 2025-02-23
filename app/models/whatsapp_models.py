@@ -11,13 +11,20 @@ class WhatsAppContact(BaseModel):
 class WhatsAppTextMessage(BaseModel):
     body: str
 
+class WhatsAppImageMessage(BaseModel):
+    id: str
+    mime_type: str
+    sha256: str
+    caption: Optional[str] = None
+
 class WhatsAppMessage(BaseModel):
     from_: str = Field(alias="from")
-    text: WhatsAppTextMessage
-
+    type: str
+    text: Optional[WhatsAppTextMessage] = None
+    image: Optional[WhatsAppImageMessage] = None
+    
     model_config = {
-        "populate_by_name": True,
-        "allow_population_by_field_name": True
+        "populate_by_name": True
     }
 
 class WhatsAppValue(BaseModel):
