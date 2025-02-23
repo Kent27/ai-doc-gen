@@ -60,6 +60,16 @@ class WhatsAppService:
             entry = request.entry[0]
             change = entry.changes[0]
             value = change.value
+
+            # Check if this is a status update
+            if hasattr(value, 'statuses'):
+                # Just acknowledge status updates without processing
+                return {"status": "success", "message": "Status update received"}
+
+            # Continue only if it's a message
+            if not hasattr(value, 'messages') or not value.messages:
+                return {"status": "success", "message": "No messages to process"}
+
             messages = value.messages
             contact = value.contacts[0]
             

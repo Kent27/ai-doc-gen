@@ -27,17 +27,29 @@ class WhatsAppMessage(BaseModel):
         "populate_by_name": True
     }
 
+class WhatsAppStatus(BaseModel):
+    id: str
+    status: str
+    timestamp: str
+    recipient_id: str
+
 class WhatsAppValue(BaseModel):
-    messages: List[WhatsAppMessage]
-    contacts: List[WhatsAppContact]
+    messaging_product: str
+    metadata: dict
+    contacts: Optional[List[dict]] = None
+    messages: Optional[List[dict]] = None
+    statuses: Optional[List[WhatsAppStatus]] = None
 
 class WhatsAppChange(BaseModel):
     value: WhatsAppValue
+    field: str
 
 class WhatsAppEntry(BaseModel):
+    id: str
     changes: List[WhatsAppChange]
 
 class WhatsAppWebhookRequest(BaseModel):
+    object: str
     entry: List[WhatsAppEntry]
 
 class WhatsAppChatRequest(BaseModel):
