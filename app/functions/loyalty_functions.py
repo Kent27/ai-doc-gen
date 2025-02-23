@@ -153,18 +153,28 @@ class InvoiceSheet(GoogleSheetsBase):
 
             # Calculate and add loyalty stamps
             stamps_added = 0
+            current_stamps = 0
             if total_amount > 0:
                 stamps_to_add = int(total_amount // 50000)
                 if stamps_to_add > 0:
                     if await loyalty_sheet.add_stamps(phone_number, stamps_to_add):
                         stamps_added = stamps_to_add
+            
+            # Get updated stamp count
+            stamp_info = await loyalty_sheet.get_stamp_loyalty(phone_number)
+            if stamp_info["status"] == "success":
+                current_stamps = int(stamp_info["data"]["jumlah_stamp"])
 
             return {
                 "status": "success",
                 "processed_invoices": processed_invoices,
                 "total_amount": total_amount,
                 "stamps_added": stamps_added,
-                "message": f"Berhasil memproses {len(processed_invoices)} invoice dan menambahkan {stamps_added} stamp"
+                "current_stamps": current_stamps,
+                "message": (
+                    f"Berhasil memproses {len(processed_invoices)} invoice dan menambahkan {stamps_added} stamp. "
+                    f"Total stamp Anda sekarang: {current_stamps}"
+                )
             }
 
         except Exception as e:

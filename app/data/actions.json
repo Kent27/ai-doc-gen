@@ -103,6 +103,39 @@
                     }
                 }
             ],
+            "response": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Status proses (success/error)",
+                        "enum": ["success", "error"]
+                    },
+                    "processed_invoices": {
+                        "type": "array",
+                        "description": "Daftar ID invoice yang berhasil diproses",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "total_amount": {
+                        "type": "number",
+                        "description": "Total nilai pembelian yang diproses"
+                    },
+                    "stamps_added": {
+                        "type": "integer",
+                        "description": "Jumlah stamp yang ditambahkan"
+                    },
+                    "current_stamps": {
+                        "type": "integer",
+                        "description": "Total stamp pelanggan setelah penambahan"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Pesan sukses atau error"
+                    }
+                }
+            },
             "function_path": "app.functions.loyalty_functions.process_invoices"
         }
     }
