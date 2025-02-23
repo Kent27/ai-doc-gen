@@ -212,12 +212,23 @@ class OpenAIAssistantService:
                 thread = await self._run_sync(self.client.beta.threads.create)
                 thread_id = thread.id
 
-            # Add message
+            # Parse the content if it's a JSON string
+            message_content = request.messages[-1].content
+            if isinstance(message_content, str):
+                try:
+                    content_dict = json.loads(message_content)
+                    # Extract the actual message content
+                    message_content = content_dict.get("content", message_content)
+                except json.JSONDecodeError:
+                    # If not JSON, use the content as is
+                    pass
+
+            # Add message with proper content
             await self._run_sync(
                 self.client.beta.threads.messages.create,
                 thread_id=thread_id,
                 role="user",
-                content=request.messages[-1].content
+                content=message_content  # Use the extracted or original content
             )
 
             # Run assistant
@@ -265,7 +276,7 @@ class OpenAIAssistantService:
                     
                 await asyncio.sleep(1)
 
-            # Get messages
+            # Get messages with proper content handling
             messages = await self._run_sync(
                 self.client.beta.threads.messages.list,
                 thread_id=thread_id,
@@ -273,36 +284,31 @@ class OpenAIAssistantService:
                 limit=10
             )
 
-            def process_message_content(msg):
-                formatted_content = []
-                for content in msg.content:
-                    if content.type == "text":
-                        formatted_content.append(TextContent(
-                            type="text",
-                            text=content.text.value
-                        ))
-                    elif content.type == "image_file":
-                        formatted_content.append(ImageFileContent(
-                            type="image_file",
-                            image_file={
-                                "file_id": content.image_file.file_id,
-                                "detail": content.image_file.detail
-                            }
-                        ))
-                    logger.debug(f"Processing content type: {content.type}")
-                    logger.debug(f"Formatted content: {formatted_content[-1].model_dump()}")
-                return formatted_content
-
-            return ChatResponse(
-                assistant_id=request.assistant_id,
-                thread_id=thread_id,
-                messages=[
+            # Process messages with proper content extraction
+            processed_messages = []
+            for msg in messages.data:
+                content = []
+                for content_item in msg.content:
+                    if content_item.type == 'text':
+                        content.append({
+                            'type': 'text',
+                            'text': content_item.text.value
+                        })
+                    elif content_item.type == 'image':
+                        content.append({
+                            'type': 'image_file',
+                            'image_file': content_item.image_file.file_id
+                        })
+                processed_messages.append(
                     ChatMessage(
                         role=msg.role,
-                        content=process_message_content(msg)  # Directly use the processed list
+                        content=content[0]['text'] if content else ""  # Extract just the text content
                     )
-                    for msg in messages.data
-                ],
+                )
+
+            return ChatResponse(
+                thread_id=thread_id,
+                messages=processed_messages,
                 status=run_status.status
             )
 

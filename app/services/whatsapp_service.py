@@ -10,6 +10,7 @@ from ..models.whatsapp_models import WhatsAppWebhookRequest, WhatsAppMessage, Wh
 from ..services.openai_service import OpenAIAssistantService
 from ..models.assistant_models import ChatRequest, ChatMessage, ContentItem, ImageFileContent, TextContent
 from ..utils.google_sheets import check_customer_exists, update_customer, insert_customer
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -40,21 +41,55 @@ class WhatsAppService:
         """Upload file to OpenAI for vision processing"""
         url = f"{self.base_openai_url}/files"
         
-        # Create file object from bytes
-        files = {
-            'file': (filename, image_data, 'image/jpeg'),
-            'purpose': (None, 'vision')
-        }
-        
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url, 
-                headers=self.openai_headers, 
-                files=files
-            )
-            response.raise_for_status()
-            return response.json()
+        try:
+            # Create file object from bytes
+            files = {
+                'file': (filename, image_data, 'image/jpeg'),
+                'purpose': (None, 'vision')
+            }
             
+            async with httpx.AsyncClient() as client:
+                # Upload file
+                response = await client.post(
+                    url, 
+                    headers=self.openai_headers,
+                    files=files
+                )
+                
+                if response.status_code != 200:
+                    raise ValueError(f"Failed to upload file: {response.text}")
+                
+                file_data = response.json()
+                
+                # Verify file status
+                file_id = file_data.get('id')
+                if not file_id:
+                    raise ValueError("No file ID in response")
+                
+                # Wait for file to be processed
+                max_retries = 3
+                retry_delay = 1  # seconds
+                
+                for _ in range(max_retries):
+                    status_response = await client.get(
+                        f"{url}/{file_id}",
+                        headers=self.openai_headers
+                    )
+                    
+                    if status_response.status_code == 200:
+                        status_data = status_response.json()
+                        if status_data.get('status') == 'processed':
+                            logger.info(f"File {filename} uploaded and processed successfully")
+                            return file_data
+                    
+                    await asyncio.sleep(retry_delay)
+                
+                raise ValueError("File upload verification timed out")
+                
+        except Exception as e:
+            logger.error(f"Error uploading file to OpenAI: {str(e)}")
+            raise
+
     async def process_webhook(self, request: WhatsAppWebhookRequest) -> Dict[str, Any]:
         try:
             entry = request.entry[0]
@@ -84,30 +119,49 @@ class WhatsAppService:
                         "text": message.text.body
                     })
                 elif message.type == "image":
-                    # Download and optimize image
-                    image_data = await self._download_media(message.image.id)
-                    optimized_image = await self._optimize_image(image_data)
-                    
-                    # Upload to OpenAI
-                    file_response = await self.upload_file(
-                        optimized_image,
-                        f"whatsapp_image_{message.image.id}.jpg"
-                    )
-                    
-                    # Create image content dictionary
-                    content_items.append({
-                        "type": "image_file",
-                        "image_file": {
-                            "file_id": file_response["id"],
-                            "detail": "high"
-                        }
-                    })
-                    
-                    if message.image.caption:
+                    try:
+                        # Download and optimize image
+                        image_data = await self._download_media(message.image.id)
+                        
+                        # Upload to OpenAI and wait for processing
+                        file_response = await self.upload_file(
+                            image_data,
+                            f"whatsapp_image_{message.image.id}.jpg"
+                        )
+                        
+                        if not file_response or 'id' not in file_response:
+                            raise ValueError("Failed to get valid file response from OpenAI")
+                            
+                        logger.info(f"File uploaded successfully: {file_response['id']}")
+                        
+                        # Create image content dictionary
+                        content_items.append({
+                            "type": "image_file",
+                            "image_file": {
+                                "file_id": file_response["id"],
+                                "detail": "high"
+                            }
+                        })
+                        
+                        # Add analysis instruction as text content
                         content_items.append({
                             "type": "text",
-                            "text": message.image.caption
+                            "text": f"Mohon analisa gambar invoice ini dan ekstrak nomor invoice dan total pembayarannya. Pelanggan: {contact.profile.name}, Nomor Telepon: {messages[0].from_}"
                         })
+                        
+                        if message.image.caption:
+                            content_items.append({
+                                "type": "text",
+                                "text": "Caption: " + message.image.caption
+                            })
+                            
+                    except Exception as e:
+                        logger.error(f"Error processing image: {str(e)}")
+                        await self.send_message(
+                            to=messages[0].from_,
+                            message="Maaf, terjadi kesalahan saat memproses gambar. Mohon coba lagi."
+                        )
+                        return {"status": "error", "message": str(e)}
 
             customer = await check_customer_exists(messages[0].from_)
             thread_id = customer.get('thread_id') if customer else None
@@ -118,19 +172,10 @@ class WhatsAppService:
                 thread_id=thread_id,
                 messages=[ChatMessage(
                     role="user",
-                    content=[{
-                        "type": "text",
-                        "text": json.dumps({
-                            "content": content_items,
-                            "metadata": {
-                                "phone_number": messages[0].from_,
-                                "customer_name": contact.profile.name
-                            }
-                        })
-                    }]
+                    content=content_items  # Send content_items directly
                 )]
             ))
-            
+
             # Update customer data
             customer_data = {
                 'phone': messages[0].from_,
@@ -142,39 +187,35 @@ class WhatsAppService:
                 await update_customer(customer, customer_data)
             else:
                 await insert_customer(customer_data)
-            
             # Send response
             if chat_response.messages:
                 assistant_message = next(
                     (msg for msg in chat_response.messages if msg.role == "assistant"),
                     None
                 )
+
                 if assistant_message and assistant_message.content:
-                    response_text = assistant_message.content[0].text
-                    await self.send_message(
-                        to=messages[0].from_,
-                        message=response_text
-                    )
+                    # Handle the content directly as a string
+                    response_text = assistant_message.content
+                    
+                    if response_text:
+                        logger.info(f"Sending response to {messages[0].from_}: {response_text}")
+                        await self.send_message(
+                            to=messages[0].from_,
+                            message=response_text
+                        )
+                    else:
+                        logger.error("No text content found in assistant response")
+                else:
+                    logger.error("No assistant message or content found")
+            else:
+                logger.error("No messages in chat response")
             
             return {"status": "success"}
             
         except Exception as e:
             logger.error(f"Error processing webhook: {str(e)}")
             return {"status": "error", "message": str(e)}
-        
-    async def _optimize_image(self, image_data: bytes, max_size: int = 800) -> bytes:
-        """Optimize image size while maintaining quality"""
-        image = Image.open(BytesIO(image_data))
-        
-        # Calculate new dimensions while maintaining aspect ratio
-        ratio = min(max_size / image.width, max_size / image.height)
-        new_size = (int(image.width * ratio), int(image.height * ratio))
-        
-        # Resize and compress
-        image = image.resize(new_size, Image.Resampling.LANCZOS)
-        output = BytesIO()
-        image.save(output, format='JPEG', quality=85, optimize=True)
-        return output.getvalue()
 
     async def _download_media(self, media_id: str) -> bytes:
         """Download media from WhatsApp"""

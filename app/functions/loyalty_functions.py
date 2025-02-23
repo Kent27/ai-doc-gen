@@ -113,6 +113,29 @@ class InvoiceSheet(GoogleSheetsBase):
                 for row in values if len(row) >= 3
             }
             
+            # Check if any invoice has been claimed
+            claimed_invoices = []
+            for invoice in invoices:
+                invoice_id = invoice.get("id")
+                if invoice_id in existing_invoices and existing_invoices[invoice_id]["claimed"]:
+                    claimed_by = existing_invoices[invoice_id]["claimed_by"]
+                    claimed_invoices.append({
+                        "id": invoice_id,
+                        "claimed_by": claimed_by
+                    })
+
+            if claimed_invoices:
+                claimed_details = "\n".join([
+                    f"- Invoice {inv['id']} telah diklaim oleh {inv['claimed_by']}"
+                    for inv in claimed_invoices
+                ])
+                return {
+                    "status": "has_been_claimed",
+                    "message": f"Beberapa invoice telah diklaim sebelumnya:\n{claimed_details}",
+                    "claimed_invoices": claimed_invoices
+                }
+
+            # Continue with existing processing for unclaimed invoices
             total_amount = 0
             processed_invoices = []
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

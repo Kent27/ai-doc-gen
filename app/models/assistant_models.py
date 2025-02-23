@@ -65,24 +65,37 @@ class ImageFileContent(BaseModel):
     type: Literal["image_file"] = "image_file"
     image_file: Dict[str, str]
 
-ContentItem = Union[TextContent, ImageFileContent]
+class ImageFile(BaseModel):
+    file_id: str
+    detail: str = "high"
+
+class ContentMetadata(BaseModel):
+    phone_number: Optional[str] = None
+    customer_name: Optional[str] = None
+    invoice_id: Optional[str] = None
+    total_price: Optional[str] = None
+
+class ContentItem(BaseModel):
+    type: str
+    text: Optional[str] = None
+    image_file: Optional[Dict[str, str]] = None
 
 class ChatMessage(BaseModel):
     role: str
-    content: List[ContentItem]
+    content: Union[str, List[ContentItem], List[Dict[str, Any]]]
 
 class ThreadMessages(BaseModel):
     messages: List[ChatMessage]
     has_more: bool
     first_id: Optional[str] = None
     last_id: Optional[str] = None
+
 class ChatRequest(BaseModel):
     assistant_id: str
-    messages: List[ChatMessage]
     thread_id: Optional[str] = None
+    messages: List[ChatMessage]
 
 class ChatResponse(BaseModel):
-    assistant_id: str
     thread_id: str
-    messages: List[ChatMessage]
+    messages: Optional[List[ChatMessage]] = None
     status: str
