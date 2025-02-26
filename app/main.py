@@ -10,8 +10,9 @@ import os
 from dotenv import load_dotenv
 import docx
 from .routers import assistant_router
-import logging, datetime
 from .routers import whatsapp
+from .utils.app_logger import app_logger, log_request
+import datetime
 
 # Load environment variables from .env file
 load_dotenv()
@@ -21,13 +22,24 @@ app = FastAPI()
 app.include_router(assistant_router.router)
 app.include_router(whatsapp.router)
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-
+# Configure logging middleware
 @app.middleware("http")
-async def log_request(request: Request, call_next):
-    body = await request.body()
+async def log_request_middleware(request: Request, call_next):
+    # Get request body
+    body_bytes = await request.body()
+    body = body_bytes.decode(errors='replace')
+    
+    # Process the request
     response = await call_next(request)
-    logging.info(f"{datetime.datetime.now().isoformat()} {request.method} {request.url} Body: {body.decode(errors='replace')} Status: {response.status_code}")
+    
+    # Log the request details
+    log_request(
+        method=request.method,
+        url=str(request.url),
+        body=body,
+        status_code=response.status_code
+    )
+    
     return response
 
 # Directory setup
@@ -45,6 +57,8 @@ IS_PRODUCTION = HOST_URL.startswith("https://") or os.getenv("PRODUCTION", "fals
 # Construct full host URL (include PORT only if not in production)
 FULL_HOST_URL = f"{HOST_URL}:{PORT}" if not IS_PRODUCTION and PORT else HOST_URL
 
+# Log application startup
+app_logger.info(f"Application starting up. Host URL: {FULL_HOST_URL}")
 
 class DocumentRequest(BaseModel):
     """

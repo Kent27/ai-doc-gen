@@ -18,3 +18,5 @@ __pycache__/
 app/__pycache__
 app/*.pyc
 app/static/generated_docs
+
+app/logs

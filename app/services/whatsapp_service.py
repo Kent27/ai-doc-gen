@@ -10,9 +10,11 @@ from ..models.whatsapp_models import WhatsAppWebhookRequest, WhatsAppMessage, Wh
 from ..services.openai_service import OpenAIAssistantService
 from ..models.assistant_models import ChatRequest, ChatMessage, ContentItem, ImageFileContent, TextContent
 from ..utils.google_sheets import check_customer_exists, update_customer, insert_customer
+from ..utils.logging_utils import log_whatsapp_message
 import asyncio
 
-logger = logging.getLogger(__name__)
+# Replace the existing logger with our app logger
+from ..utils.app_logger import app_logger as logger
 
 class WhatsAppService:
     def __init__(self):
@@ -98,6 +100,14 @@ class WhatsAppService:
 
             # Check if this is a status update and the value is not None
             if hasattr(value, 'statuses') and value.statuses is not None:
+                # Log status update
+                if hasattr(value.statuses[0], 'recipient_id'):
+                    log_whatsapp_message(
+                        phone_number=value.statuses[0].recipient_id,
+                        message_type="status",
+                        message_data={"status": value.statuses[0].status},
+                        direction="outgoing"
+                    )
                 # Just acknowledge status updates without processing
                 return {"status": "success", "message": "Status update received"}
 
@@ -108,9 +118,45 @@ class WhatsAppService:
             messages = [WhatsAppMessage.model_validate(msg) for msg in value.messages]
             contact = WhatsAppContact.model_validate(value.contacts[0])
             
+            # Log each incoming message
+            for message in messages:
+                log_data = {
+                    "message_id": message.id,
+                    "timestamp": message.timestamp,
+                    "contact_name": contact.profile.name,
+                }
+                
+                if message.type == "text" and hasattr(message, 'text'):
+                    log_data["text"] = message.text.body
+                elif message.type == "image" and hasattr(message, 'image'):
+                    log_data["image_id"] = message.image.id
+                    if hasattr(message.image, 'caption') and message.image.caption:
+                        log_data["caption"] = message.image.caption
+                
+                log_whatsapp_message(
+                    phone_number=message.from_,
+                    message_type=message.type,
+                    message_data=log_data,
+                    direction="incoming"
+                )
+            
+            # Check if customer exists in Google Sheets
+            customer = await check_customer_exists(messages[0].from_)
+            
+            # Check if customer is in "Live Chat" mode - if so, skip AI processing
+            if customer and customer.get('chat_status') == "Live Chat":
+                logger.info(f"Customer {messages[0].from_} is in Live Chat mode. Skipping AI processing.")
+                log_whatsapp_message(
+                    phone_number=messages[0].from_,
+                    message_type="system",
+                    message_data={"message": "Live Chat mode active - AI processing skipped"},
+                    direction="system"
+                )
+                return {"status": "success", "message": "Live Chat mode active - AI processing skipped"}
+            
             # Process all messages
             content_items: List[Dict] = []
-            thread_id = None
+            thread_id = customer.get('thread_id') if customer else None
             
             for message in messages:
                 if message.type == "text":
@@ -163,9 +209,6 @@ class WhatsAppService:
                         )
                         return {"status": "error", "message": str(e)}
 
-            customer = await check_customer_exists(messages[0].from_)
-            thread_id = customer.get('thread_id') if customer else None
-
             # Get AI response with all message contents and metadata
             chat_response = await self.assistant_service.chat(ChatRequest(
                 assistant_id=os.getenv("WHATSAPP_ASSISTANT_ID"),
@@ -184,6 +227,9 @@ class WhatsAppService:
             }
             
             if customer:
+                # Preserve the existing chat_status when updating
+                if 'chat_status' in customer:
+                    customer_data['chat_status'] = customer['chat_status']
                 await update_customer(customer, customer_data)
             else:
                 await insert_customer(customer_data)
@@ -200,6 +246,15 @@ class WhatsAppService:
                     
                     if response_text:
                         logger.info(f"Sending response to {messages[0].from_}: {response_text}")
+                        
+                        # Log outgoing message before sending
+                        log_whatsapp_message(
+                            phone_number=messages[0].from_,
+                            message_type="text",
+                            message_data={"text": response_text},
+                            direction="outgoing"
+                        )
+                        
                         await self.send_message(
                             to=messages[0].from_,
                             message=response_text
@@ -215,6 +270,16 @@ class WhatsAppService:
             
         except Exception as e:
             logger.error(f"Error processing webhook: {str(e)}")
+            
+            # Log the error with the phone number if available
+            if 'messages' in locals() and messages and hasattr(messages[0], 'from_'):
+                log_whatsapp_message(
+                    phone_number=messages[0].from_,
+                    message_type="error",
+                    message_data={"error": str(e)},
+                    direction="system"
+                )
+            
             return {"status": "error", "message": str(e)}
 
     async def _download_media(self, media_id: str) -> bytes:
@@ -250,29 +315,46 @@ class WhatsAppService:
             "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/json"
         }
-        data = {
+        
+        payload = {
             "messaging_product": "whatsapp",
             "recipient_type": "individual",
             "to": formatted_to,
             "type": "text",
-            "text": {"preview_url": True, "body": message}
+            "text": {
+                "preview_url": True,
+                "body": message
+            }
         }
-        
-        logger.info(f"Sending WhatsApp message to {formatted_to}")
-        logger.debug(f"Request data: {data}")
         
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(url, headers=headers, json=data)
+                response = await client.post(url, headers=headers, json=payload)
                 response_data = response.json()
-                logger.debug(f"WhatsApp API response: {response_data}")
+                
+                # Log the API response
+                log_whatsapp_message(
+                    phone_number=to,
+                    message_type="api_response",
+                    message_data=response_data,
+                    direction="system"
+                )
                 
                 if response.status_code != 200:
-                    logger.error(f"WhatsApp API error: {response.text}")
-                    raise ValueError(f"WhatsApp API error: {response.text}")
-                    
-                return response_data
+                    logger.error(f"Error sending message: {response.text}")
+                    return {"status": "error", "message": response.text}
+                
+                return {"status": "success", "data": response_data}
                 
         except Exception as e:
-            logger.error(f"Error sending WhatsApp message: {str(e)}")
-            raise
+            logger.error(f"Error sending message: {str(e)}")
+            
+            # Log the error
+            log_whatsapp_message(
+                phone_number=to,
+                message_type="error",
+                message_data={"error": str(e)},
+                direction="system"
+            )
+            
+            return {"status": "error", "message": str(e)}

@@ -46,14 +46,9 @@ class CustomerSheet(GoogleSheetsBase):
         await self.update_values(range_name, values)
         return True
 
-        
-    #     await self.append_values([new_row])
-    #     return True
-    
     async def update_customer(self, customer, data: dict) -> bool:
         """Update customer data in Google Sheets"""
         try:
-                
             # Update name and thread_id
             range_name = f'Sheet1!A{customer["row_number"]}:F{customer["row_number"]}'
             values = [[
@@ -61,7 +56,7 @@ class CustomerSheet(GoogleSheetsBase):
                 data['phone'],              # Column B: Phone
                 customer.get('email', ''),  # Column C: Email (preserve existing)
                 customer.get('stamps', '0'), # Column D: Stamps (preserve existing)
-                customer.get('chat_status', ''), # Column E: Chat Status
+                data.get('chat_status', customer.get('chat_status', '')), # Column E: Chat Status (preserve existing if not provided)
                 data['thread_id']           # Column F: Thread ID
             ]]
             
@@ -80,13 +75,40 @@ class CustomerSheet(GoogleSheetsBase):
                 data['phone'],
                 '',               # Email (empty)
                 '0',              # Loyalty Stamps (start with 0)
-                '',               # Chat Status (empty)
+                data.get('chat_status', ''),  # Chat Status (empty or provided)
                 data['thread_id']
             ]
             await self.append_values([new_row])
         except Exception as e:
             logger.error(f"Error inserting customer: {str(e)}")
             raise
+
+    async def set_chat_status(self, phone_number: str, status: str) -> bool:
+        """
+        Set the chat status for a customer
+        
+        Args:
+            phone_number: The customer's phone number
+            status: The status to set (e.g., "Live Chat")
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            customer = await self.check_customer_exists(phone_number)
+            if not customer:
+                return False
+                
+            # Update just the chat status column (Column E)
+            range_name = f'Sheet1!E{customer["row_number"]}'
+            values = [[status]]
+            
+            await self.update_values(range_name, values)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting chat status: {str(e)}")
+            return False
 
 # Create singleton instance
 customer_sheet = CustomerSheet()
@@ -96,3 +118,4 @@ check_customer_exists = customer_sheet.check_customer_exists
 update_customer_name = customer_sheet.update_customer_name
 insert_customer = customer_sheet.insert_customer
 update_customer = customer_sheet.update_customer
+set_chat_status = customer_sheet.set_chat_status

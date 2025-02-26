@@ -19,6 +19,8 @@ class WhatsAppImageMessage(BaseModel):
 
 class WhatsAppMessage(BaseModel):
     from_: str = Field(alias="from")
+    id: str
+    timestamp: str
     type: str
     text: Optional[WhatsAppTextMessage] = None
     image: Optional[WhatsAppImageMessage] = None
