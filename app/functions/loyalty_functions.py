@@ -2,6 +2,11 @@ import os
 from ..utils.sheets_base import GoogleSheetsBase
 from typing import Dict, List, Optional
 from datetime import datetime
+import json
+import logging
+from ..utils.logging_utils import get_phone_logger
+
+logger = logging.getLogger(__name__)
 
 class LoyaltySheet(GoogleSheetsBase):
     def __init__(self):
@@ -89,13 +94,22 @@ class InvoiceSheet(GoogleSheetsBase):
             phone_number = invoice_data["metadata"].get("phone_number")
             customer_name = invoice_data["metadata"].get("customer_name", "Unknown")
             
+            # Set up phone-specific logger if phone number is available
+            phone_logger = None
+            if phone_number:
+                phone_logger = get_phone_logger(phone_number)
+                phone_logger.info(f"Processing {len(invoices)} invoices for {customer_name}")
+            
             if not invoices:
+                if phone_logger:
+                    phone_logger.error("Invalid invoice format - empty invoices list")
                 return {
                     "status": "error",
                     "message": "Format invoice tidak valid"
                 }
 
             if not phone_number:
+                logger.error("Phone number missing in metadata")
                 return {
                     "status": "error",
                     "message": "Nomor telepon diperlukan dalam metadata"
@@ -117,6 +131,12 @@ class InvoiceSheet(GoogleSheetsBase):
             claimed_invoices = []
             for invoice in invoices:
                 invoice_id = invoice.get("id")
+                logger.info(f"[DEBUG] Checking invoice {invoice_id}")
+                
+                if not invoice_id:
+                    logger.warning(f"[DEBUG] Invoice missing ID: {json.dumps(invoice, default=str)}")
+                    continue
+                    
                 if invoice_id in existing_invoices and existing_invoices[invoice_id]["claimed"]:
                     claimed_by = existing_invoices[invoice_id]["claimed_by"]
                     claimed_invoices.append({
@@ -129,6 +149,8 @@ class InvoiceSheet(GoogleSheetsBase):
                     f"- Invoice {inv['id']} telah diklaim oleh {inv['claimed_by']}"
                     for inv in claimed_invoices
                 ])
+                if phone_logger:
+                    phone_logger.warning(f"Found {len(claimed_invoices)} previously claimed invoices")
                 return {
                     "status": "has_been_claimed",
                     "message": f"Beberapa invoice telah diklaim sebelumnya:\n{claimed_details}",
@@ -142,7 +164,13 @@ class InvoiceSheet(GoogleSheetsBase):
             
             for invoice in invoices:
                 invoice_id = invoice.get("id")
-                invoice_total = float(invoice.get("total", 0))
+                invoice_total_raw = invoice.get("total", 0)
+                
+                try:
+                    invoice_total = float(invoice_total_raw)
+                except (ValueError, TypeError) as e:
+                    logger.error(f"[DEBUG] Error converting invoice total to float: {str(e)}, value: {invoice_total_raw}")
+                    continue
                 
                 if not invoice_id or not invoice_total:
                     continue
@@ -182,13 +210,17 @@ class InvoiceSheet(GoogleSheetsBase):
                 if stamps_to_add > 0:
                     if await loyalty_sheet.add_stamps(phone_number, stamps_to_add):
                         stamps_added = stamps_to_add
+                        if phone_logger:
+                            phone_logger.info(f"Added {stamps_added} stamps from total amount {total_amount}")
             
             # Get updated stamp count
             stamp_info = await loyalty_sheet.get_stamp_loyalty(phone_number)
             if stamp_info["status"] == "success":
                 current_stamps = int(stamp_info["data"]["jumlah_stamp"])
+                if phone_logger:
+                    phone_logger.info(f"Current stamp count: {current_stamps}")
 
-            return {
+            result = {
                 "status": "success",
                 "processed_invoices": processed_invoices,
                 "total_amount": total_amount,
@@ -199,8 +231,16 @@ class InvoiceSheet(GoogleSheetsBase):
                     f"Total stamp Anda sekarang: {current_stamps}"
                 )
             }
+            
+            if phone_logger:
+                phone_logger.info(f"Successfully processed {len(processed_invoices)} invoices, total: {total_amount}")
+                
+            return result
 
         except Exception as e:
+            if phone_number:
+                phone_logger = get_phone_logger(phone_number)
+                phone_logger.error(f"Error processing invoices: {str(e)}")
             return {
                 "status": "error",
                 "message": f"Terjadi kesalahan saat memproses invoice: {str(e)}"

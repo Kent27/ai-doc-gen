@@ -177,8 +177,7 @@ class WhatsAppService:
                         
                         if not file_response or 'id' not in file_response:
                             raise ValueError("Failed to get valid file response from OpenAI")
-                            
-                        logger.info(f"File uploaded successfully: {file_response['id']}")
+                        logger.info(f"File uploaded successfully: {file_response['id']}")                            
                         
                         # Create image content dictionary
                         content_items.append({
@@ -190,9 +189,10 @@ class WhatsAppService:
                         })
                         
                         # Add analysis instruction as text content
+                        analysis_instruction = f"Mohon analisa gambar invoice ini dan ekstrak nomor invoice dan total pembayarannya. Pelanggan: {contact.profile.name}, Nomor Telepon: {messages[0].from_}"
                         content_items.append({
                             "type": "text",
-                            "text": f"Mohon analisa gambar invoice ini dan ekstrak nomor invoice dan total pembayarannya. Pelanggan: {contact.profile.name}, Nomor Telepon: {messages[0].from_}"
+                            "text": analysis_instruction
                         })
                         
                         if message.image.caption:
