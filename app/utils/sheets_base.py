@@ -50,12 +50,12 @@ class GoogleSheetsBase:
             body=body
         ).execute()
     
-    async def append_values(self, values: List[List[str]], value_input_option: str = 'RAW'):
+    async def append_values(self, values: List[List[str]], range_name: Optional[str] = None, value_input_option: str = 'RAW'):
         """Append values to the sheet"""
         body = {'values': values}
         self.service.spreadsheets().values().append(
             spreadsheetId=self.sheet_id,
-            range=self.range_name,
+            range=range_name if range_name else self.range_name,
             valueInputOption=value_input_option,
             insertDataOption='INSERT_ROWS',
             body=body

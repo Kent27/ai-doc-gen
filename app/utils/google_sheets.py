@@ -49,22 +49,55 @@ class CustomerSheet(GoogleSheetsBase):
     async def update_customer(self, customer, data: dict) -> bool:
         """Update customer data in Google Sheets"""
         try:
-            # Update name and thread_id
-            range_name = f'Sheet1!A{customer["row_number"]}:F{customer["row_number"]}'
-            values = [[
-                data['name'],               # Column A: Name
-                data['phone'],              # Column B: Phone
-                customer.get('email', ''),  # Column C: Email (preserve existing)
-                customer.get('stamps', '0'), # Column D: Stamps (preserve existing)
-                data.get('chat_status', customer.get('chat_status', '')), # Column E: Chat Status (preserve existing if not provided)
-                data['thread_id']           # Column F: Thread ID
-            ]]
+            # Instead of updating the entire row at once, update specific cells
+            # This prevents race conditions when multiple processes update different parts of the same row
             
-            await self.update_values(range_name, values)
+            # Update name if provided
+            if 'name' in data and data['name'] != customer.get('name'):
+                await self.update_values(
+                    f'Sheet1!A{customer["row_number"]}',
+                    [[data['name']]]
+                )
+            
+            # Update chat_status if provided
+            if 'chat_status' in data and data['chat_status'] != customer.get('chat_status'):
+                await self.update_values(
+                    f'Sheet1!E{customer["row_number"]}',
+                    [[data['chat_status']]]
+                )
+            
+            # Update thread_id if provided
+            if 'thread_id' in data and data['thread_id'] != customer.get('thread_id'):
+                await self.update_values(
+                    f'Sheet1!F{customer["row_number"]}',
+                    [[data['thread_id']]]
+                )
+            
             return True
             
         except Exception as e:
             logger.error(f"Error updating customer: {str(e)}")
+            raise
+
+    async def update_thread_id(self, customer, thread_id: str) -> bool:
+        """Update only the thread_id for a customer
+        
+        This is a specialized function to avoid race conditions when
+        multiple processes are updating different parts of the same customer record.
+        """
+        try:
+            if not thread_id or thread_id == customer.get('thread_id'):
+                return True  # No change needed
+                
+            # Update only the thread_id cell (Column F)
+            await self.update_values(
+                f'Sheet1!F{customer["row_number"]}',
+                [[thread_id]]
+            )
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating thread_id: {str(e)}")
             raise
 
     async def insert_customer(self, data: dict) -> None:
@@ -78,7 +111,8 @@ class CustomerSheet(GoogleSheetsBase):
                 data.get('chat_status', ''),  # Chat Status (empty or provided)
                 data['thread_id']
             ]
-            await self.append_values([new_row])
+            # Explicitly specify the range to ensure we start from column A
+            await self.append_values([new_row], range_name="Sheet1!A1")
         except Exception as e:
             logger.error(f"Error inserting customer: {str(e)}")
             raise
@@ -118,4 +152,5 @@ check_customer_exists = customer_sheet.check_customer_exists
 update_customer_name = customer_sheet.update_customer_name
 insert_customer = customer_sheet.insert_customer
 update_customer = customer_sheet.update_customer
+update_thread_id = customer_sheet.update_thread_id
 set_chat_status = customer_sheet.set_chat_status

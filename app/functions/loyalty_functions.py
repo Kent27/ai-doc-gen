@@ -5,6 +5,7 @@ from datetime import datetime
 import json
 import logging
 from ..utils.logging_utils import get_phone_logger
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -167,9 +168,17 @@ class InvoiceSheet(GoogleSheetsBase):
                 invoice_total_raw = invoice.get("total", 0)
                 
                 try:
-                    invoice_total = float(invoice_total_raw)
+                    # Handle currency formatting (e.g., "Rp155.500")
+                    if isinstance(invoice_total_raw, str):
+                        # Remove currency symbol and any non-numeric characters except decimal separator
+                        cleaned_total = invoice_total_raw.replace("Rp", "").replace(".", "").replace(",", ".")
+                        invoice_total = float(cleaned_total)
+                    else:
+                        invoice_total = float(invoice_total_raw)
                 except (ValueError, TypeError) as e:
                     logger.error(f"[DEBUG] Error converting invoice total to float: {str(e)}, value: {invoice_total_raw}")
+                    if phone_logger:
+                        phone_logger.error(f"Failed to parse invoice total: {invoice_total_raw}")
                     continue
                 
                 if not invoice_id or not invoice_total:
@@ -214,11 +223,29 @@ class InvoiceSheet(GoogleSheetsBase):
                             phone_logger.info(f"Added {stamps_added} stamps from total amount {total_amount}")
             
             # Get updated stamp count
-            stamp_info = await loyalty_sheet.get_stamp_loyalty(phone_number)
-            if stamp_info["status"] == "success":
-                current_stamps = int(stamp_info["data"]["jumlah_stamp"])
+            stamp_info = None
+            retry_count = 0
+            max_retries = 3
+            
+            while retry_count < max_retries:
+                stamp_info = await loyalty_sheet.get_stamp_loyalty(phone_number)
+                if stamp_info["status"] == "success":
+                    current_stamps = int(stamp_info["data"]["jumlah_stamp"])
+                    if phone_logger:
+                        phone_logger.info(f"Current stamp count: {current_stamps}")
+                    break
+                else:
+                    retry_count += 1
+                    if phone_logger:
+                        phone_logger.warning(f"Retry {retry_count}/{max_retries} fetching stamp info - not found yet")
+                    # Wait a moment before retrying
+                    await asyncio.sleep(1)
+            
+            # If we still don't have stamp info after retries, use default value
+            if not stamp_info or stamp_info["status"] != "success":
+                current_stamps = stamps_added  # Assume this is the first time
                 if phone_logger:
-                    phone_logger.info(f"Current stamp count: {current_stamps}")
+                    phone_logger.warning(f"Could not fetch stamp info after {max_retries} retries. Using default value: {current_stamps}")
 
             result = {
                 "status": "success",

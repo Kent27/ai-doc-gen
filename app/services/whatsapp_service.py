@@ -4,17 +4,59 @@ import os
 import httpx
 from PIL import Image  # Change this line
 from io import BytesIO
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 from ..models.whatsapp_models import WhatsAppWebhookRequest, WhatsAppMessage, WhatsAppContact
 from ..services.openai_service import OpenAIAssistantService
 from ..models.assistant_models import ChatRequest, ChatMessage, ContentItem, ImageFileContent, TextContent
-from ..utils.google_sheets import check_customer_exists, update_customer, insert_customer
+from ..utils.google_sheets import check_customer_exists, update_customer, insert_customer, update_thread_id
 from ..utils.logging_utils import log_whatsapp_message
 import asyncio
+from datetime import datetime, timedelta
+from collections import OrderedDict
 
 # Replace the existing logger with our app logger
 from ..utils.app_logger import app_logger as logger
+
+# Message deduplication cache with a max size to prevent memory leaks
+class MessageCache:
+    def __init__(self, max_size=1000):
+        self.cache = OrderedDict()
+        self.max_size = max_size
+        
+    def add(self, message_id: str) -> bool:
+        """
+        Add a message ID to the cache.
+        Returns True if the message is new, False if it already exists.
+        """
+        if message_id in self.cache:
+            # Update position in OrderedDict (mark as recently used)
+            self.cache.move_to_end(message_id)
+            return False
+            
+        # Add new message ID
+        self.cache[message_id] = datetime.now()
+        
+        # Remove oldest entries if cache exceeds max size
+        if len(self.cache) > self.max_size:
+            self.cache.popitem(last=False)
+            
+        return True
+        
+    def cleanup(self, max_age_minutes=30):
+        """Remove entries older than max_age_minutes"""
+        now = datetime.now()
+        cutoff = now - timedelta(minutes=max_age_minutes)
+        
+        # Create a list of keys to remove (can't modify during iteration)
+        to_remove = [
+            key for key, timestamp in self.cache.items() 
+            if timestamp < cutoff
+        ]
+        
+        # Remove old entries
+        for key in to_remove:
+            del self.cache[key]
 
 class WhatsAppService:
     def __init__(self):
@@ -28,6 +70,9 @@ class WhatsAppService:
             "Authorization": f"Bearer {os.getenv('OPENAI_API_KEY')}"
         }
         self.base_openai_url = "https://api.openai.com/v1"
+
+        # Initialize message cache for deduplication
+        self.message_cache = MessageCache()
 
         if not all([self.phone_number_id, self.access_token]):
             raise ValueError("Missing required WhatsApp environment variables")
@@ -118,6 +163,16 @@ class WhatsAppService:
             messages = [WhatsAppMessage.model_validate(msg) for msg in value.messages]
             contact = WhatsAppContact.model_validate(value.contacts[0])
             
+            # Check for duplicate messages to prevent double processing
+            # Use the first message's ID as the key for deduplication
+            message_id = messages[0].id
+            if not self.message_cache.add(message_id):
+                logger.info(f"Skipping duplicate message: {message_id}")
+                return {"status": "success", "message": "Duplicate message skipped"}
+            # Periodically clean up old message IDs
+            if datetime.now().minute % 5 == 0:  # Clean up every 5 minutes
+                self.message_cache.cleanup()
+            
             # Log each incoming message
             for message in messages:
                 log_data = {
@@ -140,8 +195,25 @@ class WhatsAppService:
                     direction="incoming"
                 )
             
-            # Check if customer exists in Google Sheets
+            # Check if customer exists in Google Sheets - MOVED TO BEGINNING
             customer = await check_customer_exists(messages[0].from_)
+            
+            # Create customer if they don't exist - MOVED FROM AFTER OPENAI CALL
+            if not customer:
+                logger.info(f"Customer Does Not Exist - Creating new customer record for: {contact.profile.name} ({messages[0].from_})")
+                # For new customers, we need to insert the full record with a temporary thread_id
+                # We'll update the thread_id after the OpenAI call
+                customer_data = {
+                    'phone': messages[0].from_,
+                    'name': contact.profile.name,
+                    'thread_id': ''  # Empty thread_id will be updated after OpenAI call
+                }
+                await insert_customer(customer_data)
+                
+                # Fetch the newly created customer record
+                customer = await check_customer_exists(messages[0].from_)
+                if not customer:
+                    logger.error(f"Failed to create customer record for {messages[0].from_}")
             
             # Check if customer is in "Live Chat" mode - if so, skip AI processing
             if customer and customer.get('chat_status') == "Live Chat":
@@ -157,6 +229,13 @@ class WhatsAppService:
             # Process all messages
             content_items: List[Dict] = []
             thread_id = customer.get('thread_id') if customer else None
+            
+            # Add customer information as context at the beginning
+            customer_context = f"Customer: {contact.profile.name}, Phone: {messages[0].from_}"
+            content_items.append({
+                "type": "text",
+                "text": customer_context
+            })
             
             for message in messages:
                 if message.type == "text":
@@ -189,7 +268,7 @@ class WhatsAppService:
                         })
                         
                         # Add analysis instruction as text content
-                        analysis_instruction = f"Mohon analisa gambar invoice ini dan ekstrak nomor invoice dan total pembayarannya. Pelanggan: {contact.profile.name}, Nomor Telepon: {messages[0].from_}"
+                        analysis_instruction = f"Mohon analisa gambar invoice ini dan ekstrak nomor invoice dan total pembayarannya."
                         content_items.append({
                             "type": "text",
                             "text": analysis_instruction
@@ -218,21 +297,12 @@ class WhatsAppService:
                     content=content_items  # Send content_items directly
                 )]
             ))
-
-            # Update customer data
-            customer_data = {
-                'phone': messages[0].from_,
-                'name': contact.profile.name,
-                'thread_id': chat_response.thread_id
-            }
             
-            if customer:
-                # Preserve the existing chat_status when updating
-                if 'chat_status' in customer:
-                    customer_data['chat_status'] = customer['chat_status']
-                await update_customer(customer, customer_data)
-            else:
-                await insert_customer(customer_data)
+            # Update thread_id if needed
+            if customer and thread_id != chat_response.thread_id:
+                logger.info(f"Updating thread_id for customer {customer['phone']} from {thread_id} to {chat_response.thread_id}")
+                await update_thread_id(customer, chat_response.thread_id)
+            
             # Send response
             if chat_response.messages:
                 assistant_message = next(
