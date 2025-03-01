@@ -137,6 +137,66 @@
                 }
             },
             "function_path": "app.functions.loyalty_functions.process_invoices"
+        },
+        "enable_live_chat": {
+            "name": "enable_live_chat",
+            "description": "Mengaktifkan mode Live Chat untuk pelanggan sehingga pesan akan ditangani oleh agen manusia",
+            "url": null,
+            "method": "POST",
+            "headers": null,
+            "parameters": [
+                {
+                    "name": "phone_number",
+                    "type": "string",
+                    "description": "Nomor telepon pelanggan",
+                    "required": true
+                }
+            ],
+            "response": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Status proses (success/error)",
+                        "enum": ["success", "error"]
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Pesan sukses atau error"
+                    }
+                }
+            },
+            "function_path": "app.functions.chat_functions.enable_live_chat"
+        },
+        "disable_live_chat": {
+            "name": "disable_live_chat",
+            "description": "Menonaktifkan mode Live Chat untuk pelanggan sehingga pesan akan ditangani oleh asisten AI",
+            "url": null,
+            "method": "POST",
+            "headers": null,
+            "parameters": [
+                {
+                    "name": "phone_number",
+                    "type": "string",
+                    "description": "Nomor telepon pelanggan",
+                    "required": true
+                }
+            ],
+            "response": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Status proses (success/error)",
+                        "enum": ["success", "error"]
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Pesan sukses atau error"
+                    }
+                }
+            },
+            "function_path": "app.functions.chat_functions.disable_live_chat"
         }
     }
 }

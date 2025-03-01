@@ -163,6 +163,40 @@ class WhatsAppService:
             messages = [WhatsAppMessage.model_validate(msg) for msg in value.messages]
             contact = WhatsAppContact.model_validate(value.contacts[0])
             
+            # Validate message timestamp (accounting for GMT+7)
+            try:
+                current_time = int(datetime.now().timestamp())
+                message_time = int(messages[0].timestamp)
+                time_difference = abs(current_time - message_time)
+                
+                # Calculate human-readable times for logging
+                current_time_readable = datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
+                message_time_readable = datetime.fromtimestamp(message_time).strftime('%Y-%m-%d %H:%M:%S')
+                
+                # Reject messages with timestamps more than 24 hours off
+                if time_difference > 86400:  # 24 hours in seconds
+                    logger.warning(
+                        f"Suspicious timestamp detected! Message: {message_time} ({message_time_readable}), "
+                        f"Current: {current_time} ({current_time_readable}), "
+                        f"Difference: {time_difference}s ({time_difference/3600:.2f} hours)"
+                    )
+                    
+                    # Log the full webhook payload for suspicious messages
+                    logger.warning(f"Suspicious webhook payload: {json.dumps(request.model_dump(), default=str)}")
+                    
+                    return {
+                        "status": "success", 
+                        "message": "Message with invalid timestamp rejected",
+                        "details": {
+                            "message_time": message_time_readable,
+                            "current_time": current_time_readable,
+                            "time_difference_hours": time_difference/3600
+                        }
+                    }
+            except Exception as e:
+                logger.error(f"Error validating message timestamp: {str(e)}")
+                # Continue processing even if timestamp validation fails
+            
             # Check for duplicate messages to prevent double processing
             # Use the first message's ID as the key for deduplication
             message_id = messages[0].id
@@ -173,11 +207,12 @@ class WhatsAppService:
             if datetime.now().minute % 5 == 0:  # Clean up every 5 minutes
                 self.message_cache.cleanup()
             
-            # Log each incoming message
+            # Log each incoming message with enhanced details
             for message in messages:
                 log_data = {
                     "message_id": message.id,
                     "timestamp": message.timestamp,
+                    "timestamp_readable": datetime.fromtimestamp(int(message.timestamp)).strftime('%Y-%m-%d %H:%M:%S'),
                     "contact_name": contact.profile.name,
                 }
                 
