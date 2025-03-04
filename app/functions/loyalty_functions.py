@@ -1,6 +1,6 @@
 import os
 from ..utils.sheets_base import GoogleSheetsBase
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from datetime import datetime
 import json
 import logging
@@ -42,13 +42,13 @@ class LoyaltySheet(GoogleSheetsBase):
                 "message": f"Terjadi kesalahan: {str(e)}"
             }
 
-    async def add_stamps(self, phone_number: str, stamps_to_add: int) -> bool:
+    async def add_stamps(self, phone_number: str, stamps_to_add: int) -> Dict[str, Any]:
         """Add loyalty stamps to specific customer's account"""
         print(f"Adding {stamps_to_add} stamps to {phone_number}")
         try:
             values = await self.get_values()
             if not values:
-                return False
+                return {"success": False, "error": "No values found in sheet"}
             
             # Find the customer's row
             for row_index, row in enumerate(values):
@@ -61,13 +61,18 @@ class LoyaltySheet(GoogleSheetsBase):
                         f'Sheet1!D{row_index + 2}',
                         [[str(new_stamps)]]
                     )
-                    return True
+                    return {
+                        "success": True,
+                        "previous_stamps": current_stamps,
+                        "added_stamps": stamps_to_add,
+                        "current_stamps": new_stamps
+                    }
             
-            return False  # Customer not found
+            return {"success": False, "error": "Customer not found"}
         
         except Exception as e:
             print(f"Error adding stamps: {str(e)}")
-            return False
+            return {"success": False, "error": str(e)}
 
 # Create singleton instance
 loyalty_sheet = LoyaltySheet()
@@ -131,8 +136,12 @@ class InvoiceSheet(GoogleSheetsBase):
             # Check if any invoice has been claimed
             claimed_invoices = []
             for invoice in invoices:
-                invoice_id = invoice.get("id")
+                invoice_id = invoice.get("id", "").strip()
                 logger.info(f"[DEBUG] Checking invoice {invoice_id}")
+                
+                # Remove '#' from the beginning of invoice ID if present
+                if invoice_id.startswith('#'):
+                    invoice_id = invoice_id[1:]
                 
                 if not invoice_id:
                     logger.warning(f"[DEBUG] Invoice missing ID: {json.dumps(invoice, default=str)}")
@@ -164,19 +173,26 @@ class InvoiceSheet(GoogleSheetsBase):
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             for invoice in invoices:
-                invoice_id = invoice.get("id")
-                invoice_total_raw = invoice.get("total", 0)
+                # Extract invoice ID and total
+                invoice_id = invoice.get("id", "").strip()
+                invoice_total_raw = invoice.get("total", "0").strip()
                 
+                # Remove '#' from the beginning of invoice ID if present
+                if invoice_id.startswith('#'):
+                    invoice_id = invoice_id[1:]
+                
+                # Skip empty invoice IDs
+                if not invoice_id:
+                    if phone_logger:
+                        phone_logger.warning("Skipping invoice with empty ID")
+                    continue
+                
+                # Parse invoice total
                 try:
-                    # Handle currency formatting (e.g., "Rp155.500")
-                    if isinstance(invoice_total_raw, str):
-                        # Remove currency symbol and any non-numeric characters except decimal separator
-                        cleaned_total = invoice_total_raw.replace("Rp", "").replace(".", "").replace(",", ".")
-                        invoice_total = float(cleaned_total)
-                    else:
-                        invoice_total = float(invoice_total_raw)
-                except (ValueError, TypeError) as e:
-                    logger.error(f"[DEBUG] Error converting invoice total to float: {str(e)}, value: {invoice_total_raw}")
+                    # Remove any non-numeric characters except decimal point
+                    invoice_total_clean = ''.join(c for c in invoice_total_raw if c.isdigit() or c == '.')
+                    invoice_total = float(invoice_total_clean)
+                except ValueError:
                     if phone_logger:
                         phone_logger.error(f"Failed to parse invoice total: {invoice_total_raw}")
                     continue
@@ -214,53 +230,68 @@ class InvoiceSheet(GoogleSheetsBase):
             # Calculate and add loyalty stamps
             stamps_added = 0
             current_stamps = 0
+            previous_stamps = 0
             if total_amount > 0:
                 stamps_to_add = int(total_amount // 50000)
                 if stamps_to_add > 0:
-                    if await loyalty_sheet.add_stamps(phone_number, stamps_to_add):
-                        stamps_added = stamps_to_add
+                    stamp_result = await loyalty_sheet.add_stamps(phone_number, stamps_to_add)
+                    if stamp_result["success"]:
+                        previous_stamps = stamp_result["previous_stamps"]
+                        stamps_added = stamp_result["added_stamps"]
+                        current_stamps = stamp_result["current_stamps"]
                         if phone_logger:
-                            phone_logger.info(f"Added {stamps_added} stamps from total amount {total_amount}")
+                            phone_logger.info(f"Added {stamps_added} stamps from total amount {total_amount}. Previous: {previous_stamps}, Current: {current_stamps}")
+                    else:
+                        if phone_logger:
+                            phone_logger.error(f"Failed to add stamps: {stamp_result.get('error', 'Unknown error')}")
             
-            # Get updated stamp count
+            # No need to get updated stamp count separately if we already have it from add_stamps
             stamp_info = None
-            retry_count = 0
-            max_retries = 3
-            
-            while retry_count < max_retries:
-                stamp_info = await loyalty_sheet.get_stamp_loyalty(phone_number)
-                if stamp_info["status"] == "success":
-                    current_stamps = int(stamp_info["data"]["jumlah_stamp"])
+            if current_stamps == 0:  # Only fetch from API if we don't have current stamps yet
+                retry_count = 0
+                max_retries = 3
+                
+                while retry_count < max_retries:
+                    stamp_info = await loyalty_sheet.get_stamp_loyalty(phone_number)
+                    if stamp_info["status"] == "success":
+                        current_stamps = int(stamp_info["data"]["jumlah_stamp"])
+                        if phone_logger:
+                            phone_logger.info(f"Current stamp count: {current_stamps}")
+                        break
+                    else:
+                        retry_count += 1
+                        if phone_logger:
+                            phone_logger.warning(f"Retry {retry_count}/{max_retries} fetching stamp info - not found yet")
+                        # Wait a moment before retrying
+                        await asyncio.sleep(1)
+                
+                # If we still don't have stamp info after retries, use default value
+                if not stamp_info or stamp_info["status"] != "success":
+                    current_stamps = stamps_added  # Assume this is the first time
                     if phone_logger:
-                        phone_logger.info(f"Current stamp count: {current_stamps}")
-                    break
-                else:
-                    retry_count += 1
-                    if phone_logger:
-                        phone_logger.warning(f"Retry {retry_count}/{max_retries} fetching stamp info - not found yet")
-                    # Wait a moment before retrying
-                    await asyncio.sleep(1)
+                        phone_logger.warning(f"Could not fetch stamp info after {max_retries} retries. Using default value: {current_stamps}")
             
-            # If we still don't have stamp info after retries, use default value
-            if not stamp_info or stamp_info["status"] != "success":
-                current_stamps = stamps_added  # Assume this is the first time
-                if phone_logger:
-                    phone_logger.warning(f"Could not fetch stamp info after {max_retries} retries. Using default value: {current_stamps}")
+            # If we got current_stamps but not previous_stamps, calculate previous_stamps
+            if current_stamps > 0 and previous_stamps == 0:
+                previous_stamps = current_stamps - stamps_added
+                if previous_stamps < 0:
+                    previous_stamps = 0  # Ensure we don't have negative stamps
 
             result = {
                 "status": "success",
                 "processed_invoices": processed_invoices,
                 "total_amount": total_amount,
+                "previous_stamps": previous_stamps,
                 "stamps_added": stamps_added,
                 "current_stamps": current_stamps,
                 "message": (
                     f"Berhasil memproses {len(processed_invoices)} invoice dan menambahkan {stamps_added} stamp. "
-                    f"Total stamp Anda sekarang: {current_stamps}"
+                    f"Stamp Anda bertambah dari {previous_stamps} menjadi {current_stamps}."
                 )
             }
             
             if phone_logger:
-                phone_logger.info(f"Successfully processed {len(processed_invoices)} invoices, total: {total_amount}")
+                phone_logger.info(f"Successfully processed {len(processed_invoices)} invoices, total: {total_amount}, stamps: {previous_stamps} → {current_stamps}")
                 
             return result
 
