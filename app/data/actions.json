@@ -197,6 +197,54 @@
                 }
             },
             "function_path": "app.functions.chat_functions.disable_live_chat"
+        },
+        "alert_admin": {
+            "name": "alert_admin",
+            "description": "Mengirim pesan peringatan ke nomor WhatsApp admin",
+            "url": null,
+            "method": "POST",
+            "headers": null,
+            "parameters": [
+                {
+                    "name": "message",
+                    "type": "string",
+                    "description": "Pesan peringatan yang akan dikirim",
+                    "required": true
+                },
+                {
+                    "name": "severity",
+                    "type": "string",
+                    "description": "Tingkat keparahan peringatan (info, warning, error, critical)",
+                    "required": false,
+                    "enum": ["info", "warning", "error", "critical"],
+                    "default": "info"
+                },
+                {
+                    "name": "context",
+                    "type": "object",
+                    "description": "Informasi tambahan untuk disertakan dalam peringatan",
+                    "required": false
+                }
+            ],
+            "response": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "Status proses (success/error)",
+                        "enum": ["success", "error"]
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Pesan sukses atau error"
+                    },
+                    "details": {
+                        "type": "object",
+                        "description": "Detail tambahan tentang peringatan yang dikirim"
+                    }
+                }
+            },
+            "function_path": "app.functions.alert_functions.alert_admin"
         }
     }
 }
