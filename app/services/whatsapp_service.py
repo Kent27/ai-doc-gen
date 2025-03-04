@@ -199,10 +199,10 @@ class WhatsAppService:
             
             # Check for duplicate messages to prevent double processing
             # Use the first message's ID as the key for deduplication
-            # message_id = messages[0].id
-            # if not self.message_cache.add(message_id):
-            #     logger.info(f"Skipping duplicate message: {message_id}")
-            #     return {"status": "success", "message": "Duplicate message skipped"}
+            message_id = messages[0].id
+            if not self.message_cache.add(message_id):
+                logger.info(f"Skipping duplicate message: {message_id}")
+                return {"status": "success", "message": "Duplicate message skipped"}
             # Periodically clean up old message IDs
             if datetime.now().minute % 5 == 0:  # Clean up every 5 minutes
                 self.message_cache.cleanup()
